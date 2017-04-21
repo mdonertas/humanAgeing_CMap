@@ -282,3 +282,21 @@ downsp2=setdiff(downsp,upsp)
 
 write.table(upsp2,file = './data/processed/GTEx/nobrain_up.grp',quote = F,row.names = F,col.names = F)
 write.table(downsp2,file = './data/processed/GTEx/nobrain_down.grp',quote = F,row.names = F,col.names = F)
+
+##################################
+
+gtex=read.csv('data/processed/GTEx/CMap_results/all_consistent_byname.csv')
+psx=as.numeric(as.character(gtex$p))
+# psx[is.na(psx)]=1
+gtex$padj=p.adjust(psx,method='fdr')
+
+as.data.frame(apply(gtex[which(gtex$padj<0.05),],2,function(x)paste('|',x)))
+
+
+
+gtex_nobrain=read.csv('data/processed/GTEx/CMap_results/nobrain_consistent_byname.csv')
+psx=as.numeric(as.character(gtex_nobrain$p))
+# psx[is.na(psx)]=1
+gtex_nobrain$padj=p.adjust(psx,method='fdr')
+
+as.data.frame(apply(gtex_nobrain[which(gtex_nobrain$padj<0.05),],2,function(x)paste('|',x)))
