@@ -181,8 +181,8 @@ dev.off()
 ups=names(which(rowSums(cormat>0)>=32))
 downs=names(which(rowSums(cormat>0)<=4))
 
-ups2=as.character(read.table('./data/processed/humanBrainMicroarray_LuIncluded/ensembl_consistent_up.txt')[,1])
-downs2=as.character(read.table('./data/processed/humanBrainMicroarray_LuIncluded/ensembl_consistent_down.txt')[,1])
+ups2=readRDS('./data/processed/humanBrainMicroarray/all_up_ensembl.rds')
+downs2=readRDS('./data/processed/humanBrainMicroarray/all_down_ensembl.rds')
 
 xx=list(ups,downs,ups2,downs2)
 names(xx)=c('GTEx-up','GTEx-down','Brain_micro-up','Brain_micro-down')
@@ -263,8 +263,8 @@ dev.off()
 ups=names(which(rowSums(cormat>0)>=20))
 downs=names(which(rowSums(cormat>0)<=3))
 
-ups2=as.character(read.table('./data/processed/humanBrainMicroarray_LuIncluded/ensembl_consistent_up.txt')[,1])
-downs2=as.character(read.table('./data/processed/humanBrainMicroarray_LuIncluded/ensembl_consistent_down.txt')[,1])
+ups2=readRDS('./data/processed/humanBrainMicroarray/all_up_ensembl.rds')
+downs2=readRDS('./data/processed/humanBrainMicroarray/all_down_ensembl.rds')
 
 xx=list(ups,downs,ups2,downs2)
 names(xx)=c('GTEx-up','GTEx-down','Brain_micro-up','Brain_micro-down')
