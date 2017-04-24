@@ -33,7 +33,7 @@ We compiled the genes showing consistent expression change with age across all d
 * The '.csv' files are read into R in order to correct the p values for multiple testing.
 
 |rank|cmap.name|mean|n|enrichment|p|specificity|percent.non.null|padj|
-|-|-|-|-|-||-|-|-|-|
+|----|---------|----|-|----------|-|-----------|----------------|-|
 |  1              | **geldanamycin** | -0.453 | 15   | -0.641       | 0    | 0.0234            |  80 | 0.000000000|
 |  2 | 15-delta prostaglandin J2 | -0.380 | 15   | -0.596       | 0    | 0.0451            |  60 | 0.000000000|
 |  3                 | tretinoin |  0.420 | 22   |  0.553       | 0         | 0            |  77 | 0.000000000|
@@ -67,7 +67,7 @@ In total there are 25 sub-datasets from 6 different sources (labs / experiments)
 * The '.csv' files are read into R in order to correct the p values for multiple testing.
 
 |rank|cmap.name|mean|n|enrichment|p|specificity|percent.non.null|padj|
-|-|-|-|-|-||-|-|-|-|
+|----|---------|----|-|----------|-|-----------|----------------|-|
 | 1 | 15-delta prostaglandin J2 | -0.391 | 15   | -0.584       | 0    | 0.0526             | 66 | 0.000000|
 | 2                | wortmannin |  0.376 | 18   |  0.570       | 0    | 0.0323             | 66 | 0.000000|
 | 3                 | LY-294002 |  0.425 | 61   |  0.537       | 0    | 0.0336             | 77 | 0.000000|
