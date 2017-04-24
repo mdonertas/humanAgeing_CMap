@@ -1,5 +1,80 @@
 # humanAgeing_CMap
 
+## Human Brain Ageing Microarray Datasets
+
+### Data Preparation:
+
+Data preprocessed following the steps explained in my Msc. thesis project.
+
+Files are saved as .rds data objects under './data/processed/humanBrainMicroarray/' folder.
+
+Exploratory data analysis results are saved under './results/humanBrainMicroarray/' folder.
+
+In total there are 26 sub-datasets from 7 different sources (labs / experiments). In total 28237 genes are detected at least one dataset. The number of genes detected across all datasets is 5677. The number of genes in each dataset is given in *./results/humanBrainMicroarray/numberofgenes.pdf*.  The distribution of number of datasets sharing each gene is given in *./results/humanBrainMicroarray/detectedgenedistribution.pdf*.
+
+Next we searched for the genes which show expression changes in the same direction across all datasets. Depending on how many datasets a given gene is detected, a distribution of number of datasets that show the same direction of change is generated - *./results/humanBrainMicroarray/genesharednessdistribution.pdf*.
+
+### CMap Analysis:
+
+#### All datasources:
+
+We compiled the genes showing consistent expression change with age across all datasets.
+
+|Up |Down|Background|
+|---|----|----------|
+|100|117 |5677      |
+
+##### CMap Query:
+
+* The list of up and down regulated gene id s are converted to *affymetrix hg u133a* ids, using *getBM* function in **biomaRt**<sup>1</sup> R<sup>2</sup> package. This step is required by the CMap web service.
+* If there are some probeset ids shared between up and down regulated genes, these are discarded.
+* The list of up and down regulated genes are uploaded to the query system in [CMap website](https://portals.broadinstitute.org/cmap/) with the name 'humanBrainMicroarray'.
+* The result is downloaded as '.xlsx' file and converted to '.csv' files.
+* The '.csv' files are read into R in order to correct the p values for multiple testing.
+
+|rank|cmap.name|mean|n|enrichment|p|specificity|percent.non.null|padj|
+|-|-|-|-|-||-|-|-|-|
+|  1              | **geldanamycin** | -0.453 | 15   | -0.641       | 0    | 0.0234            |  80 | 0.000000000|
+|  2 | 15-delta prostaglandin J2 | -0.380 | 15   | -0.596       | 0    | 0.0451            |  60 | 0.000000000|
+|  3                 | tretinoin |  0.420 | 22   |  0.553       | 0         | 0            |  77 | 0.000000000|
+|  4                 | **LY-294002** |  0.380 | 61   |  0.465       | 0    | 0.0872            |  72 | 0.000000000|
+|  5               | quinostatin |  0.861 |  2   |  0.995 | 0.00002    | 0.0055            | 100 | 0.001904000|
+|  6                 | **sirolimus** |  0.282 | 44   |  0.345 | 0.00004    | 0.2048            |  52 | 0.003173333|
+|  7              | **thioridazine** |  0.354 | 20   |  0.525 | 0.00006    | 0.2055            |  75 | 0.004080000|
+|  8                | **wortmannin** |  0.288 | 18   |  0.479 | 0.00024    | 0.1548            |  55 | 0.014280000|
+|  9           | trifluoperazine |  0.315 | 16   |  0.501 | 0.00028    | 0.1971            |  75 | 0.014808889|
+| 10                | securinine | -0.646 |  4   | -0.884 | 0.00042         | 0            | 100 | 0.019992000|
+| 11                   | emetine |  0.523 |  4   |  0.844 | 0.00088    | 0.0845            | 100 | 0.037286667|
+| 12            | atropine oxide | -0.346 |  5   | -0.779 | 0.00094         | 0            |  80 | 0.037286667|
+| 13              | camptothecin |  0.633 |  3   |  0.920 | 0.00112    | 0.1563            | 100 | 0.041009231|
+
+#### All datasources except Lu2004:
+
+Since Lu2004 dataset decreases the number of detected genes dramatically, we repeated the analysis after removing it, to see if it creates a bias.
+
+In total there are 25 sub-datasets from 6 different sources (labs / experiments). In total 28200 genes are detected at least one dataset. The number of genes detected across all datasets is 10893.
+
+|Up |Down|Background|
+|---|----|----------|
+|192|202 |10893     |
+
+##### CMap Query:
+
+* The list of up and down regulated gene id s are converted to *affymetrix hg u133a* ids, using *getBM* function in **biomaRt**<sup>1</sup> R<sup>2</sup> package. This step is required by the CMap web service.
+* If there are some probeset ids shared between up and down regulated genes, these are discarded.
+* The list of up and down regulated genes are uploaded to the query system in [CMap website](https://portals.broadinstitute.org/cmap/) with the name 'humanBrainMicroarray_noLu'.
+* The result is downloaded as '.xlsx' file and converted to '.csv' files.
+* The '.csv' files are read into R in order to correct the p values for multiple testing.
+
+|rank|cmap.name|mean|n|enrichment|p|specificity|percent.non.null|padj|
+|-|-|-|-|-||-|-|-|-|
+| 1 | 15-delta prostaglandin J2 | -0.391 | 15   | -0.584       | 0    | 0.0526             | 66 | 0.000000|
+| 2                | wortmannin |  0.376 | 18   |  0.570       | 0    | 0.0323             | 66 | 0.000000|
+| 3                 | LY-294002 |  0.425 | 61   |  0.537       | 0    | 0.0336             | 77 | 0.000000|
+| 4                 | sirolimus |  0.369 | 44   |  0.421       | 0    | 0.1265             | 65 | 0.000000|
+| 5                 | tretinoin |  0.347 | 22   |  0.472 | 0.00006    | 0.0398             | 63 | 0.005472|
+| 6              | thioridazine |  0.334 | 20   |  0.469 | 0.00016    | 0.3014             | 70 | 0.012160|
+
 ## GTEx Ageing Data
 
 ### Data Preparation
