@@ -275,6 +275,25 @@ cmap_array=cmap[[1]]
 cmap_gtex=cmap[[2]]
 cmap_all=cmap[[3]]
 
+s_cmap_array=cmap_array[which(cmap_array$p.adj<0.05),]
+s_cmap_gtex=cmap_gtex[which(cmap_gtex$p.adj<0.05),]
+s_cmap_all=cmap_all[which(cmap_all$p.adj<0.05),]
+
+s_cmap_array=s_cmap_array[order(-abs(s_cmap_array$mean)),]
+s_cmap_gtex=s_cmap_gtex[order(-abs(s_cmap_gtex$mean)),]
+s_cmap_all=s_cmap_all[order(-abs(s_cmap_all$mean)),]
+
+s_array_cids=sapply(as.character(s_cmap_array$cmap.name),get_PubChemCID)
+names(s_array_cids)=as.character(s_cmap_array$cmap.name)
+s_array_cids=melt(s_array_cids[!sapply(s_array_cids,is.null)])
+colnames(s_array_cids)=c('CID','Name')
+s_array_chembl=sapply(s_array_cids$CID,getChembl_from_CID)
+names(s_array_chembl)=as.character(s_array_cids$CID)
+s_array_chembl=melt(s_array_chembl[!sapply(s_array_chembl,is.null)])
+colnames(s_array_chembl)=c('CHEMBL','CID')
+s_array_id=merge(s_array_chembl,s_array_cids,by='CID',all=T)
+s_array_targets=lapply(as.character(unique(s_array_id$CHEMBL[complete.cases(s_array_id$CHEMBL)])),getTarget_from_ChemblID)
+head(s_array_targets)
+
 #######################
 # save(list=ls(),file='./data/article.RData')
-
