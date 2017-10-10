@@ -1,0 +1,246 @@
+---
+title: "Plus and Minus Drugs"
+output:
+  html_notebook: default
+  html_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r,message=F,warning=F}
+library(biomaRt)
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(ggrepel)
+library(pheatmap)
+library(RColorBrewer)
+```
+
+```{r,warning=F,message=F}
+array_summary=read_csv('./data/processed/humanBrainMicroarray/CMap_results/all_consistent_byname.csv')
+array_detailed=read_csv('./data/processed/humanBrainMicroarray/CMap_results/all_consistent_detailed.csv')
+gtex_summary=read_csv('./data/processed/brainGTEx/CMap_results/GTEx_brain.csv')
+gtex_detailed=read_csv('./data/processed/brainGTEx/CMap_results/gtex_brain_detailed.csv')
+```
+
+```{r}
+array_summary$p.adj=p.adjust(as.numeric(array_summary$p),method='fdr')
+gtex_summary$p.adj=p.adjust(as.numeric(gtex_summary$p),method='fdr')
+```
+
+```{r}
+array=full_join(array_summary,array_detailed,by='cmap name')
+colnames(array)=c('DrugRank','Name','MeanScore','n','Enrichment','p','Specificity','Non-NULL','Adj_p','ExperimentRank','Batch','Dose','CellLine','Score','Up','Down','InstanceID')
+gtex=full_join(gtex_summary,gtex_detailed,by='cmap name')
+colnames(gtex)=c('DrugRank','Name','MeanScore','n','Enrichment','p','Specificity','Non-NULL','Adj_p','ExperimentRank','Batch','Dose','CellLine','Score','Up','Down','InstanceID')
+combined=full_join(array,gtex,by='InstanceID')
+head(combined)
+combined=combined[,-c(19,21,28,29,30)]
+colnames(combined)=c('Array_DrugRank','Name','Array_MeanScore','n','Array_Enrichment','Array_p','Array_Specificity','Array_Non-NULL','Array_ADJp',
+                     'Array_ExperimentRank','Batch','Dose','CellLine','Array_Score','Array_Up','Array_Down','InstanceID',
+                     'GTEx_DrugRank','GTEx_MeanScore','GTEx_Enrichment','GTEx_p','GTEx_Specificity','GTEx_Non-NULL','GTEx_ADJp',
+                     'GTEx_ExperimentRank','GTEx_Score','GTEx_Up','GTEx_Down')
+rm(list=setdiff(ls(),'combined'))
+```
+
+```{r,fig.width=6,fig.height=4}
+mydat=combined %>%
+  select(Array_MeanScore,GTEx_MeanScore,Name,Array_ADJp,GTEx_ADJp) %>%
+  unique()
+
+ggplot(mydat,aes(x=Array_MeanScore,y=GTEx_MeanScore,color=Array_ADJp<=0.05 | GTEx_ADJp<=0.05))+
+  geom_abline(slope = 1,intercept = 0,color='gray55',linetype='dashed')+
+  geom_point(alpha=0.3)+
+  geom_text_repel(data=filter(mydat,Array_ADJp<=0.05 | GTEx_ADJp<=0.05),aes(label=Name),color='gray25',size=5,fontface='bold')+
+  guides(color=F)+
+  # scale_colour_manual(guide=guide_legend(title='Signif?'),values=c(1:3),lables=c(F,T,NA))+
+  theme_bw()
+
+rm(mydat)
+```
+
+```{r}
+head(combined)
+```
+
+```{r}
+array_down=readRDS('./data/processed/humanBrainMicroarray/all_down_affy.rds')
+array_up=readRDS('./data/processed/humanBrainMicroarray/all_up_affy.rds')
+gtex_down=readLines('./data/processed/brainGTEx/down_affy.grp')
+gtex_up=readLines('./data/processed/brainGTEx/up_affy.grp')
+drugMat=fread('data/raw/CMap/amplitudeMatrix.txt')
+drug_colx=read.table('data/raw/CMap/amplitudeMatrix.txt',nrows = 1)
+```
+
+
+```{r}
+colnames(drugMat)=as.character(drug_colx[,as.character(colnames(drugMat))])
+```
+
+# Analysis of Array Genes
+
+```{r}
+drugMat=drugMat[which(drugMat$`1`%in%c(array_up,array_down)),]
+```
+
+
+```{r}
+drugTable=melt(drugMat)
+head(drugTable)
+colnames(drugTable)=c('ProbeID','InstanceID','DrugChange')
+```
+
+```{r}
+drugTable$ArrayChange='-'
+drugTable$ArrayChange[drugTable$ProbeID%in%array_up]='Up'
+drugTable$ArrayChange[drugTable$ProbeID%in%array_down]='Down'
+
+drugTable$GTExChange='-'
+drugTable$GTExChange[drugTable$ProbeID%in%gtex_up]='Up'
+drugTable$GTExChange[drugTable$ProbeID%in%gtex_down]='Down'
+```
+
+```{r}
+rm(list=setdiff(ls(),c('combined','drugTable')))
+drugTable$InstanceID=as.character(drugTable$InstanceID)
+combined$InstanceID=as.character(combined$InstanceID)
+```
+
+```{r}
+final_combined=full_join(combined,drugTable,by='InstanceID')
+```
+
+```{r}
+head(final_combined)
+```
+
+```{r}
+rm(list=setdiff(ls(),'final_combined'))
+```
+
+```{r}
+signif=filter(final_combined,Array_ADJp<=0.05 | GTEx_ADJp<=0.05)
+rm('final_combined')
+head(signif)
+dim(signif)
+```
+
+```{r}
+hmartx=useMart('ensembl','hsapiens_gene_ensembl')
+array_GOTable=getBM(attributes = c('affy_hg_u133a','go_id','name_1006','namespace_1003'),filters = 'affy_hg_u133a',values = unique(signif$ProbeID),mart = hmartx)
+head(array_GOTable)
+```
+
+```{r}
+array_GOBP=filter(array_GOTable,namespace_1003=='biological_process')
+array_GOBP$GOsize=c(unname(table(array_GOBP$go_id)[array_GOBP$go_id]))
+array_GOBP$namespace_1003=NULL
+colnames(array_GOBP)=c('ProbeID','GOID','GOTerm','GOsize')
+head(array_GOBP)
+```
+
+```{r}
+signif_array_genes=full_join(signif,array_GOBP,by='ProbeID')
+head(signif_array_genes)
+```
+
+```{r}
+rm(list=setdiff(ls(),'signif_array_genes'))
+```
+
+
+```{r}
+length(unique(signif_array_genes$GOID))
+length(unique(signif_array_genes$GOID[signif_array_genes$GOsize>15]))
+```
+
+```{r,eval=F}
+save(list=ls(),file='./data/drugSign.RData')
+```
+
+```{r}
+load('./data/drugSign.RData')
+```
+
+```{r, fig.height=5, fig.width=7}
+signif_array_genes %>%
+  filter(Name==unique(signif_array_genes$Name)[1]) %>%
+  filter(GOsize > 35) %>%
+  ggplot(aes(x=InstanceID,color=Array_Score,y=DrugChange))+
+  geom_hline(yintercept = 0,col='gray35')+
+  facet_grid(GOTerm~ArrayChange)+
+  geom_boxplot(alpha=0.5,fill=NA,outlier.shape = NA)+
+  geom_jitter(width = 0.2)+
+  scale_color_gradient2(low = 'midnightblue',mid = 'gray65',high = 'darkred',midpoint = 0)+
+  theme_bw()+
+  ggtitle(unique(signif_array_genes$Name)[1])
+```
+
+```{r}
+rowannot=signif_array_genes %>%
+  select(Name,Array_MeanScore,GTEx_MeanScore,Array_ADJp,GTEx_ADJp) %>%
+  unique()
+rowannot$ArraySignif=as.factor(rowannot$Array_ADJp<=0.05)
+rowannot$GTExSignif=as.factor(rowannot$GTEx_ADJp<=0.05)
+rowannot$Array=as.factor(c('-','+')[1+(rowannot$Array_MeanScore>0)])
+rowannot$GTEx=as.factor(c('-','+')[1+(rowannot$GTEx_MeanScore>0)])
+rowannot$Array_ADJp=NULL
+rowannot$GTEx_ADJp=NULL
+rowannot$Array_MeanScore=NULL
+rowannot$GTEx_MeanScore=NULL
+rowannot=as.data.frame(rowannot)
+rownames(rowannot)=rowannot$Name
+rowannot$Name=NULL
+rowannot[is.na(rowannot)]=F
+```
+
+```{r}
+mymat=signif_array_genes %>%
+  filter(GOsize>15)%>%
+  select(GOID,DrugChange,ProbeID,Name,ArrayChange,GOTerm) %>%
+  unique() %>%
+  group_by(Name,ProbeID,ArrayChange,GOID,GOTerm) %>%
+  summarise(mean=mean(DrugChange)) %>%
+  group_by(Name,GOID,GOTerm,ArrayChange) %>%
+  summarise(mean=mean(mean))
+mydown=mymat %>%
+  filter(ArrayChange=='Down') %>%
+  ungroup()%>%
+  select(Name,GOTerm,mean) %>%
+  unique() %>%
+  spread(key=GOTerm,value=mean)
+mydownmat=as.matrix(mydown[,2:ncol(mydown)])
+rownames(mydownmat)=mydown$Name
+myup=mymat %>%
+  filter(ArrayChange=='Up') %>%
+  ungroup()%>%
+  select(Name,GOTerm,mean) %>%
+  unique() %>%
+  spread(key=GOTerm,value=mean)
+myupmat=as.matrix(myup[,2:ncol(myup)])
+rownames(myupmat)=myup$Name
+```
+
+```{r,fig.height=3.5}
+pheatmap(t(mydownmat),
+         annotation_col = rowannot,
+         color = colorRampPalette(c('blue','white','red'))(21),
+         breaks = seq(-1*abs(max(mydownmat)),abs(max(mydownmat)),length.out = 20),
+         height = 7,width = 10,
+         # filename = '~/Desktop/down_genes.pdf',
+         cellheight = 8,cellwidth = 8)
+pheatmap(t(myupmat),
+         annotation_col = rowannot,
+         color = colorRampPalette(c('blue','white','red'))(21),
+         breaks = seq(-1*abs(max(mydownmat)),abs(max(mydownmat)),length.out = 20),
+         cellheight = 8,cellwidth = 8,
+         # filename = '~/Desktop/up_genes.pdf',
+         height = 7,width = 10)
+```
+
+

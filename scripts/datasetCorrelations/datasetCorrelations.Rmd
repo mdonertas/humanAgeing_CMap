@@ -1,0 +1,89 @@
+---
+title: "Correlations Among Datasets"
+output:
+  html_notebook: default
+  html_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r}
+library(clustermq)
+fx = function(i){
+  xx=readRDS(paste('/nfs/research2/thornton/melike/humanAgeing_CMap/data/processed/permutation/cormat/perm',i,'.rds',sep=''))
+  co=cor(xx,method='s',use='pairwise')
+  co
+}
+fx2=function(i){readRDS(paste('/nfs/research2/thornton/melike/humanAgeing_CMap/data/processed/permutation/cormat/perm1.rds',sep=''))}
+exprs_perm1=Q(fx2,i=1,n_jobs = 1)[[1]]
+dim(exprs_perm1)
+corsx=Q(fx, i=1:1000, n_jobs=50)
+load('./data/article.RData')
+rm(list=setdiff(ls(),c('corsx','corx_array','exprs_perm1')))
+perm_cors=t(sapply(corsx,function(x){
+  co=x[upper.tri(x)]
+  c(median=median(co),percNeg=mean(co<0))
+}))
+```
+
+```{r}
+head(perm_cors)
+```
+
+```{r}
+par(mfrow=c(1,2))
+hist(perm_cors[,2],xlim=c(-0.1,0.55),br=100,main='Percent negative')
+abline(v=mean(corx_array<0),col='red')
+
+hist(perm_cors[,1],xlim=c(-0.1,0.35),br=100,main='Median Correlation Coefficient')
+abline(v=median(corx_array),col='red')
+```
+
+```{r}
+dnames=sapply(strsplit(colnames(corsx[[1]]),'_'),function(x)x[1])
+perm_cors2=t(sapply(corsx,function(x){
+  co=x[upper.tri(x) & sapply(dnames,function(a)sapply(dnames,function(y)a!=y))]
+  c(median=median(co),percNeg=mean(co<0))
+}))
+head(perm_cors2)
+```
+
+```{r}
+par(mfrow=c(1,2))
+hist(perm_cors2[,2],xlim=c(-0.1,0.55),br=100,main='Percent negative')
+abline(v=mean(corx_array<0),col='red')
+
+hist(perm_cors2[,1],xlim=c(-0.1,0.35),br=100,main='Median Correlation Coefficient')
+abline(v=median(corx_array),col='red')
+```
+
+
+
+```{r,fig.height=4.5,fig.width=4.5}
+library(pheatmap)
+library(scales)
+# real data
+pheatmap(corx_array,
+         color = colorRampPalette(c(muted('lightblue'),'white','darkred'))(30),
+         breaks=seq(-1,1,length.out = 31),
+         display_numbers = T,
+         number_format = '%.1f',
+         number_color = 'gray15',cellwidth = 15,cellheight = 15)
+# one of the permutations
+co=cor(exprs_perm1,method='s',use='pairwise')
+pheatmap(co,
+         color = colorRampPalette(c(muted('lightblue'),'white','darkred'))(30),
+         breaks=seq(-1,1,length.out = 31),
+         display_numbers = T,
+         number_format = '%.1f',
+         number_color = 'gray15',cellwidth = 15,cellheight = 15)
+```
+
+
+
+
+

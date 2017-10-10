@@ -1,0 +1,41 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(clustermq)
+fx2=function(i){readRDS(paste('/nfs/research2/thornton/melike/humanAgeing_CMap/data/processed/permutation/cormat/perm',i,'.rds',sep=''))}
+exprs_perms=Q(fx2,i=1:1000,n_jobs = 50)
+```
+
+```{r}
+rmat=readRDS('./data/processed/humanBrainMicroarray/cormat.rds')
+rmat=rmat[complete.cases(rmat),]
+rs=rowSums(rmat>0)
+ps=sapply(1:length(rs),function(i){
+  print(i)
+  a=sapply(exprs_perms,function(x)sum(x[names(rs)[i],]>0))
+  p=ifelse(mean(a>=rs[i])<=0.5,2*mean(a>=rs[i]),2*mean(a<=rs[i]))
+  return(p)
+})
+padj=p.adjust(ps,method='fdr')
+signif=names(rs)[which(padj<=0.05)]
+sum(padj<=0.05)
+```
+
+```{r}
+resx=data.frame(p=ps,p.adj=padj,share=rs)
+resx[resx$p.adj<=0.05,]
+```
+
+```{r}
+array_up=readRDS('./data/processed/humanBrainMicroarray/all_up_ensembl.rds')
+array_down=readRDS('./data/processed/humanBrainMicroarray/all_down_ensembl.rds')
+mean(array_up%in%signif)
+mean(array_down%in%signif)
+mean(signif%in%c(array_down,array_up))
+setdiff(array_up,signif)
+setdiff(array_down,signif)
+```
+

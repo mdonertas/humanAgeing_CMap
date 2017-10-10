@@ -1,0 +1,43 @@
+---
+title: "Analysis - 10.04.2017"
+output: html_notebook
+---
+
+Copy the age-series gene expression change results and ages under /data/processed/humanBrainMicroarray/exp_cors
+
+```{r}
+system('mkdir -p ./data/processed/humanBrainMicroarray/exp_cors')
+sapply(paste('cp',
+             list.files('~/GD/ageingDrugs_cMAP-ca784cc95f522a5cf2ce687fed49f1c4ae1493d2/preliminary2/data/processed/humanBrain/humanBrain_expCors/',
+                        full.names = T),
+             './data/processed/humanBrainMicroarray/exp_cors/'),
+       function(x)system(x))
+```
+
+```{r}
+filesx=list.files('./data/processed/humanBrainMicroarray/exp_cors/',full.names = T)
+filesx=filesx[!grepl('Lu2004',filesx)]
+filesx=grep('age.rds',filesx,v=T)
+cors=lapply(filesx,readRDS)
+nms=gsub('_age.rds','',sapply(strsplit(filesx,'/'),function(x)x[7]))
+names(cors)=nms
+genelist=unique(unname(unlist(sapply(cors,rownames))))
+cormat=matrix(NA,nrow=length(genelist),ncol=length(nms),dimnames = list(genelist,nms))
+pmat=matrix(NA,nrow=length(genelist),ncol=length(nms),dimnames = list(genelist,nms))
+padjmat=matrix(NA,nrow=length(genelist),ncol=length(nms),dimnames = list(genelist,nms))
+for(nm in nms){
+  cor=cors[[nm]]
+  genes=rownames(cor)
+  cormat[genes,nm]=cor[,1]
+  pmat[genes,nm]=cor[,2]
+  padjmat[genes,nm]=cor[,3]
+}
+print(cormat[1:10,1:5])
+print(pmat[1:10,1:5])
+print(padjmat[1:10,1:5])
+saveRDS(cormat,file='./data/processed/humanBrainMicroarray/cormat.rds')
+saveRDS(pmat,file='./data/processed/humanBrainMicroarray/pmat.rds')
+saveRDS(padjmat,file='./data/processed/humanBrainMicroarray/padjmat.rds')
+```
+
+## Basic statistics on datasets:

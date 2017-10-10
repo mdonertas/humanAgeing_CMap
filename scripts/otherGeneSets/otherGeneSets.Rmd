@@ -1,0 +1,81 @@
+---
+title: "Validation using other gene sets"
+output:
+  html_notebook: default
+  html_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r}
+library(biomaRt)
+library(tidyverse)
+library(pheatmap)
+```
+
+```{r}
+load('./data/article.RData')
+rm(list=setdiff(ls(),c('array_up','array_down','gtex_up','gtex_down')))
+genage_human=readRDS('../shared/ageingGenes/genAge/human/genage_human_ensemblID_20170313.rds')
+down_magal=read.csv('../shared/ageingGenes/signatures_supplement/underexp_genage2.csv',skip = 9,head=T)[,1]
+up_magal=read.csv('../shared/ageingGenes/signatures_supplement/overexp_genage2.csv',skip = 14,head=T)[,1]
+down_magal_ens=getBM(attributes = c('ensembl_gene_id'),filters = 'entrezgene',values = down_magal,mart = useMart('ensembl','hsapiens_gene_ensembl'))[,1]
+up_magal_ens=getBM(attributes = c('ensembl_gene_id'),filters = 'entrezgene',values = up_magal,mart = useMart('ensembl','hsapiens_gene_ensembl'))[,1]
+genage_expression_mod1=c(down_magal_ens,up_magal_ens)
+down_magal2=read.csv('../shared/ageingGenes/signatures_supplement/underexp_genage.csv',skip = 7,head=T)[,1]
+up_magal2=read.csv('../shared/ageingGenes/signatures_supplement/overexp_genage.csv',skip = 7,head=T)[,1]
+down_magal_ens2=getBM(attributes = c('ensembl_gene_id'),filters = 'entrezgene',values = down_magal2,mart = useMart('ensembl','hsapiens_gene_ensembl'))[,1]
+up_magal_ens2=getBM(attributes = c('ensembl_gene_id'),filters = 'entrezgene',values = up_magal2,mart = useMart('ensembl','hsapiens_gene_ensembl'))[,1]
+genage_expression_mod2=c(down_magal_ens,up_magal_ens2)
+modelgenage=read.csv('../shared/ageingGenes/models_genes/genage_models.csv')
+celegans=(filter(modelgenage,organism==unique(modelgenage$organism)[1]) %>% select(entrez.gene.id))[,1]
+mouse=(filter(modelgenage,organism==unique(modelgenage$organism)[2]) %>% select(entrez.gene.id))[,1]
+yeast=(filter(modelgenage,organism==unique(modelgenage$organism)[3]) %>% select(entrez.gene.id))[,1]
+fly=(filter(modelgenage,organism==unique(modelgenage$organism)[4]) %>% select(entrez.gene.id))[,1]
+worm=unique(getBM(attributes = c('hsapiens_homolog_ensembl_gene'),filters = 'entrezgene',values = celegans,mart = useMart('ensembl','celegans_gene_ensembl'))[,1])
+mouse=unique(getBM(attributes = c('hsapiens_homolog_ensembl_gene'),filters = 'entrezgene',values = mouse,mart = useMart('ensembl','mmusculus_gene_ensembl'))[,1])
+yeast=unique(getBM(attributes = c('hsapiens_homolog_ensembl_gene'),filters = 'entrezgene',values = yeast,mart = useMart('ensembl','scerevisiae_gene_ensembl'))[,1])
+fly=unique(getBM(attributes = c('hsapiens_homolog_ensembl_gene'),filters = 'entrezgene',values = fly,mart = useMart('ensembl','dmelanogaster_gene_ensembl'))[,1])
+AgeingLiterature=unique(getBM(attributes='ensembl_gene_id',filters = 'entrezgene',values = read.csv('../shared/ageingGenes/plosone.csv')[,2],mart = useMart('ensembl','hsapiens_gene_ensembl'))[,1])
+AgeingLiterature2=unique(getBM(attributes='ensembl_gene_id',filters = 'entrezgene',values = read.csv('../shared/ageingGenes/plosone2.csv')[,2],mart = useMart('ensembl','hsapiens_gene_ensembl'))[,1])
+AgeingLiterature3=unique(getBM(attributes='ensembl_gene_id',filters = 'entrezgene',values = read.csv('../shared/ageingGenes/literature3.csv')[,2],mart = useMart('ensembl','hsapiens_gene_ensembl'))[,1])
+AgeFactDB=read.table('../shared/ageingGenes/AgeFactDB/gene-expmAnalysis.csv',head=T,sep=',')
+AgeFactDB=as.character(AgeFactDB[AgeFactDB$Name..Species...Homology.Group.Gene.=='Homo sapiens',1])
+AgeFactDB=unique(getBM(attributes='ensembl_gene_id',filters = 'hgnc_symbol',values = AgeFactDB,mart = useMart('ensembl','hsapiens_gene_ensembl'))[,1])
+atlas=unique(getBM(attributes='ensembl_gene_id',filters = 'hgnc_symbol',values = unique(sapply(strsplit(as.character(read.table('../shared/ageingGenes/digital_ageing_atlas_data/atlas_brain.txt',head=T,sep='\t')[,1]),'[ (]'),function(x)x[1])),mart = useMart('ensembl','hsapiens_gene_ensembl'))[,1])
+```
+
+```{r}
+mylist=list(
+  AgeingLiterature=AgeingLiterature,
+            AgeingLiterature2=AgeingLiterature2,
+            # AgeingLiterature3=AgeingLiterature3,
+            Array=c(array_up,array_down),
+            GTEx=c(gtex_up,gtex_down),
+  atlas=atlas,
+            GenAge_Exp1=genage_expression_mod1,
+            GenAge_Exp2=genage_expression_mod2,
+  AgeFactDB=AgeFactDB,
+            GenAge_Human=genage_human,
+            Mouse=mouse,
+            Fly=fly,
+            Worm=worm,
+            Yeast=yeast
+)
+names(mylist)=paste(names(mylist),unname(sapply(mylist,length)),sep='_')  
+inters=sapply(mylist,function(x)sapply(mylist,function(y)mean(x%in%y)))
+```
+
+```{r,fig.height=4}
+pheatmap(inters,
+         color = colorRampPalette(c('white','darkred'))(30),
+         breaks=seq(0,1,length.out = 31),
+         display_numbers = T,
+         number_format = '%.2f',
+         number_color = 'gray15',cellwidth = 25,cellheight = 25,
+         cluster_cols = T,cluster_rows = T,cutree_rows = 5,cutree_cols = 4)
+```

@@ -46,17 +46,17 @@ row_annot=data.frame(BrainReg=c('-','Down','Up')[plist%in%c(br_up,br_down) + pli
                      )
 rownames(row_annot)=plist
 
-mymat=as.matrix(drugmat[plist%in%c(br_up,br_down,gtex_up,gtex_down),c(rownames(col_annot)[(which(col_annot$p!='-'))]),with=F])
-rownames(mymat)=plist[plist%in%c(br_up,br_down,gtex_up,gtex_down)]
+mymat=as.matrix(drugmat[plist%in%c(gtex_up,gtex_down,br_up,br_down),c(rownames(col_annot)[(which(col_annot$p!='-'))]),with=F])
+rownames(mymat)=plist[plist%in%c(gtex_up,gtex_down,br_up,br_down)]
 
 col_annot2=col_annot[colnames(mymat),]
 row_annot2=row_annot[rownames(mymat),]
 
 annocols=list(
-  # DrugName=setNames(c(brewer.pal(9,'Set1'),brewer.pal(8,'Set2'),brewer.pal(8,'Set3'))[1:length(unique(col_annot2$DrugName))],unique(col_annot2$DrugName)),
+  DrugName=setNames(c(brewer.pal(9,'Set1'),brewer.pal(8,'Set2'),brewer.pal(8,'Set3'),brewer.pal(8,'Dark2'),brewer.pal(9,'Pastel1'))[1:length(unique(col_annot2$DrugName))],unique(col_annot2$DrugName)),
               BrainScore=setNames(colorRampPalette(c('midnightblue','white','firebrick4'))(length(seq(-1,1,0.001))),round(seq(-1,1,0.001),4)),
               GTExScore=setNames(colorRampPalette(c('midnightblue','white','firebrick4'))(length(seq(-1,1,0.001))),round(seq(-1,1,0.001),4)),
-              p=setNames(c('gray90',brewer.pal(3,'Set1')),unique(col_annot2$p)),
+              p=setNames(c('gray90',brewer.pal(3,'Set1')),c('-','Brain','GTEx','Both')),
               CellType=setNames(brewer.pal(5,'Pastel1'),unique(col_annot2$CellType)),
               BrainReg=setNames(c('white','lightblue','pink'),c('-','Down','Up')),
               GTExReg=setNames(c('white','lightblue','pink'),c('-','Down','Up')))
@@ -64,21 +64,28 @@ annocols=list(
 # col_annot2$DrugName=NULL
 # col_annot2$GTExScore=NULL
 # row_annot2$GTExReg=NULL
-perc=10
-mymat2=t(apply(mymat,1,scale))
+# perc=10
+mymat2=t(apply(mymat,1,rank))
 
-pdf('./results/all_heatmap.pdf',width = 20,height = 30)
+# pdf('./results/all_heatmap.pdf',width = 20,height = 30)
 ph=pheatmap(mymat2,
             annotation_col = col_annot2,
             annotation_colors = annocols,
             show_rownames = F,
             show_colnames = F,
             annotation_row = row_annot2,
-            color=colorRampPalette(brewer.pal(11,'RdYlBu'))(100)[10:90],
+            color=(colorRampPalette(brewer.pal(10,'RdYlBu'))(10)),
             # color=c(muted('pink'),'white',muted('lightblue')),
-            # kmeans=20,
+            kmeans=25,
             # breaks = c(0,perc,100-perc,100)*nrow(drugmat)/100,
-            cutree_cols = 10,
-            cutree_rows = 15,
+            cutree_cols = 4,
+            cutree_rows = 5,
             border_color = 'gray95')
-dev.off()
+# dev.off()
+
+myres=t(apply(drugmat,1,function(x){
+  co=cor.test(as.numeric(x),as.numeric(col_annot$p))
+  c(co$est,co$p.val)}
+  ))
+
+plot(x=myres[,1],y=-log10(p.adjust(myres[,2],method='fdr')))

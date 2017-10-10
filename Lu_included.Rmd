@@ -1,0 +1,358 @@
+---
+title: "Lu Included"
+output: html_notebook
+---
+
+# 10/04/2017, Monday
+
+## Construct the correlation and p matrices
+
+```{r}
+filesx=list.files('./data/processed/humanBrainMicroarray/exp_cors/',full.names = T)
+# filesx=filesx[!grepl('Lu2004',filesx)]
+filesx=grep('age.rds',filesx,v=T)
+cors=lapply(filesx,readRDS)
+nms=gsub('_age.rds','',sapply(strsplit(filesx,'/'),function(x)x[7]))
+names(cors)=nms
+genelist=unique(unname(unlist(sapply(cors,rownames))))
+cormat=matrix(NA,nrow=length(genelist),ncol=length(nms),dimnames = list(genelist,nms))
+pmat=matrix(NA,nrow=length(genelist),ncol=length(nms),dimnames = list(genelist,nms))
+padjmat=matrix(NA,nrow=length(genelist),ncol=length(nms),dimnames = list(genelist,nms))
+for(nm in nms){
+  cor=cors[[nm]]
+  genes=rownames(cor)
+  cormat[genes,nm]=cor[,1]
+  pmat[genes,nm]=cor[,2]
+  padjmat[genes,nm]=cor[,3]
+}
+print(cormat[1:10,1:5])
+print(pmat[1:10,1:5])
+print(padjmat[1:10,1:5])
+```
+
+## Basic statistics on datasets:
+
+Number of sub-datasets:
+```{r}
+ncol(cormat)
+```
+
+
+Number of datasources:
+```{r}
+nms=colnames(cormat)
+length(unique(sapply(strsplit(nms,'_'),function(x)x[1])))
+```
+
+
+Number of genes detected in total:
+```{r}
+nrow(cormat)
+```
+
+
+```{r}
+library(knitr)
+dsdist=data.frame(`Number_of_Genes`=colSums(!is.na(cormat)))
+dsdist$Dataset=rownames(dsdist)
+ggplot(dsdist,aes(x=Dataset,y=Number_of_Genes))+
+  geom_bar(stat='identity')+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle=90))+
+  ylab('Number of genes')+ 
+  xlab('')+
+  ggtitle('Number of genes detected in each of the sub-datasets')
+```
+
+
+```{r}
+library(reshape2)
+library(ggplot2)
+genedist=melt(rowSums(!is.na(cormat)))
+ggplot(genedist,aes(x=value))+
+  geom_bar()+
+  theme_bw()+
+  ylab('Number of genes')+ 
+  xlab('Number of datasets')+
+  ggtitle('How many genes are detected in how many datasets?')
+```
+
+```{r,fig.height=4,fig.width=4}
+signs=data.frame(genes=rownames(cormat),
+           increase=rowSums(sign(cormat)==1,na.rm=T),
+           decrease=rowSums(sign(cormat)==-1,na.rm=T))
+signs$total=signs$increase+signs$decrease
+signs$consistent=factor(as.numeric(apply(signs,1,function(x)max(x[2],x[3]))),levels=26:1)
+head(signs)
+signs$color=signs$total==26 & as.numeric(as.character(signs$consistent))==26
+ggplot(signs,aes(x=consistent,fill=color))+
+  geom_bar(stat='count')+
+  facet_wrap(~total,scales='free_x')+
+  theme_bw()+
+  xlab('Number of Consistent Changes')+
+  ggtitle('How many consistent changes?')+
+  guides(fill=F)+
+  scale_fill_manual(values=c('gray30','darkred'))+
+  theme(axis.text.x = element_text(angle=90))
+```
+
+## Consistent Changes
+```{r}
+cons_up=rownames(cormat)[which(rowMeans(cormat>0)==1)]
+cons_down=rownames(cormat)[which(rowMeans(cormat<0)==1)]
+bg=names(which(rowMeans(is.na(cormat))==0))
+kable(data.frame(Up=length(cons_up),Down=length(cons_down),Background=length(bg)))
+```
+
+## GO Enrichment:
+
+```{r}
+library(clusterProfiler)
+go_up_bp=enrichGO(gene = cons_up,
+               universe = bg,
+               keytype = 'ENSEMBL',
+               OrgDb=org.Hs.eg.db,
+               ont='BP',
+               minGSSize = 5,
+               readable = T)
+
+go_down_bp=enrichGO(gene = cons_down,
+               universe = bg,
+               keytype = 'ENSEMBL',
+               OrgDb=org.Hs.eg.db,
+               ont='BP',
+               minGSSize = 5,
+               readable = T)
+
+go_change_bp=enrichGO(gene = c(cons_up,cons_down),
+               universe = bg,
+               keytype = 'ENSEMBL',
+               OrgDb=org.Hs.eg.db,
+               ont='BP',
+               minGSSize = 5,
+               readable = T)
+
+go_up_mf=enrichGO(gene = cons_up,
+               universe = bg,
+               keytype = 'ENSEMBL',
+               OrgDb=org.Hs.eg.db,
+               ont='MF',
+               minGSSize = 5,
+               readable = T)
+
+go_down_mf=enrichGO(gene = cons_down,
+               universe = bg,
+               keytype = 'ENSEMBL',
+               OrgDb=org.Hs.eg.db,
+               ont='MF',
+               minGSSize = 5,
+               readable = T)
+
+go_change_mf=enrichGO(gene = c(cons_up,cons_down),
+               universe = bg,
+               keytype = 'ENSEMBL',
+               OrgDb=org.Hs.eg.db,
+               ont='MF',
+               minGSSize = 5,
+               readable = T)
+
+
+go_up_cc=enrichGO(gene = cons_up,
+               universe = bg,
+               keytype = 'ENSEMBL',
+               OrgDb=org.Hs.eg.db,
+               ont='cc',
+               minGSSize = 5,
+               readable = T)
+
+go_down_cc=enrichGO(gene = cons_down,
+               universe = bg,
+               keytype = 'ENSEMBL',
+               OrgDb=org.Hs.eg.db,
+               ont='cc',
+               minGSSize = 5,
+               readable = T)
+
+go_change_cc=enrichGO(gene = c(cons_up,cons_down),
+               universe = bg,
+               keytype = 'ENSEMBL',
+               OrgDb=org.Hs.eg.db,
+               ont='cc',
+               minGSSize = 5,
+               readable = T)
+```
+
+```{r}
+plot_mygores=function(myres){
+  library(igraph)
+  library(GGally)
+  mylist=setNames(strsplit(myres@result$geneID,'/'),myres@result$Description)
+  mylist=melt(mylist)
+  gos=mylist$L1
+  genes=mylist$value
+  mygraph=graph_from_data_frame(mylist, directed = F)
+  cx=1+names(V(mygraph))%in%unique(gos)
+  sx=setNames(as.numeric(sapply(strsplit(myres@result$BgRatio,'/'),function(x)x[1])),myres@result$Description)
+  sizesx=cx*3
+  sizesx[sizesx==6]=log2(sx)
+  ggnet2(mygraph,
+         color = cx,
+         label = T,
+         label.size = c(1.5,3)[cx],
+         size = sizesx,
+         max_size = 12,
+         palette = 'Dark2')+
+    guides(size=F,color=F)
+}
+```
+
+Save the graphs:
+
+```{r}
+pdf('./results/humanBrainMicroarray_LuIncluded/GO/go_up_bp.pdf')
+plot_mygores(go_up_bp)
+dev.off()
+pdf('./results/humanBrainMicroarray_LuIncluded/GO/go_down_bp.pdf')
+plot_mygores(go_down_bp)
+dev.off()
+pdf('./results/humanBrainMicroarray_LuIncluded/GO/go_down_mf.pdf')
+plot_mygores(go_down_mf)
+dev.off()
+pdf('./results/humanBrainMicroarray_LuIncluded/GO/go_down_cc.pdf')
+plot_mygores(go_down_cc)
+dev.off()
+pdf('./results/humanBrainMicroarray_LuIncluded/GO/go_change_bp.pdf')
+plot_mygores(go_change_bp)
+dev.off()
+pdf('./results/humanBrainMicroarray_LuIncluded/GO/go_change_cc.pdf')
+plot_mygores(go_change_cc)
+dev.off()
+```
+
+### Up vs Background
+
+```{r}
+as.data.frame(go_up_bp)
+```
+
+
+```{r}
+plotGOgraph(go_up_bp,nrow(as.data.frame(go_up_bp)))
+```
+
+### Down vs Background
+
+```{r}
+as.data.frame(go_down_bp)
+```
+
+
+```{r}
+plotGOgraph(go_down_bp,nrow(as.data.frame(go_down_bp)))
+```
+
+```{r}
+as.data.frame(go_down_mf)
+```
+
+```{r}
+plotGOgraph(go_down_mf,nrow(as.data.frame(go_down_mf)))
+```
+
+```{r}
+as.data.frame(go_down_cc)
+```
+
+
+```{r}
+plotGOgraph(go_down_cc,nrow(as.data.frame(go_down_cc)))
+```
+
+### All Consistent Change vs Background
+
+```{r}
+as.data.frame(go_change_bp)
+```
+
+
+```{r}
+plotGOgraph(go_change_bp,nrow(as.data.frame(go_change_bp)))
+```
+
+```{r}
+as.data.frame(go_change_cc)
+```
+
+
+```{r}
+plotGOgraph(go_change_cc,nrow(as.data.frame(go_change_cc)))
+```
+
+## KEGG Enrichment
+
+```{r}
+signs$sign=c(-1,1)[1+(signs$increase>signs$decrease)]
+signs$frac=(as.numeric(as.character(signs$consistent))/26)*signs$sign
+genelist=setNames(signs$frac,signs$genes)
+genelist=genelist[bg]
+```
+
+```{r}
+eg = bitr(names(genelist), fromType="ENSEMBL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+bg_e = unique(eg$ENTREZID[eg$ENSEMBL%in%names(genelist)])
+cons_up_e = unique(eg$ENTREZID[eg$ENSEMBL%in%cons_up])
+cons_down_e = unique(eg$ENTREZID[eg$ENSEMBL%in%cons_down])
+keg_up=enrichKEGG(gene = cons_up_e,universe = bg_e,pvalueCutoff = 1,pAdjustMethod = 'BH',organism = 'hsa',minGSSize = 5,qvalueCutoff = 0.1)
+keg_down=enrichKEGG(gene = cons_down_e,universe = bg_e,pvalueCutoff = 1,pAdjustMethod = 'BH',organism = 'hsa',minGSSize = 5,qvalueCutoff = 0.1)
+keg_anychange=enrichKEGG(gene = c(cons_up_e,cons_down_e),universe = bg_e,pvalueCutoff = 1,pAdjustMethod = 'BH',organism = 'hsa',minGSSize = 5,qvalueCutoff = 0.1)
+genelist_e=sapply(bg_e,function(x){
+  ensver=eg$ENSEMBL[eg$ENTREZID==x]
+  if(length(ensver)==1){unname(genelist[names(genelist)%in%ensver])}
+  else {NA}
+})
+library("pathview")
+sapply(keg_up@result$ID,function(path){
+  pathview(gene.data  = genelist_e,pathway.id = path,species= "hsa",kegg.dir = './results/humanBrainMicroarray_LuIncluded/KEGG')})
+sapply(keg_down@result$ID,function(path){
+  pathview(gene.data  = genelist_e,pathway.id = path,species= "hsa",kegg.dir = './results/humanBrainMicroarray_LuIncluded/KEGG')})
+sapply(keg_anychange@result$ID,function(path){
+  pathview(gene.data  = genelist_e,pathway.id = path,species= "hsa",kegg.dir = './results/humanBrainMicroarray_LuIncluded/KEGG')})
+```
+
+```{r}
+as.data.frame(keg_up)
+as.data.frame(keg_down)
+as.data.frame(keg_anychange)
+```
+
+## Connectivity Map analysis
+
+### Convert IDs
+```{r}
+idconvert=readRDS('~/GD/ageingDrugs_cMAP-ca784cc95f522a5cf2ce687fed49f1c4ae1493d2/preliminary2/data/processed/humanBrain/rdss/id_convert.rds')
+cons_up_affy=setdiff(unique(idconvert$affy_hg_u133a[idconvert$ensembl_gene_id%in%cons_up]),c(NA,''))
+cons_down_affy=setdiff(unique(idconvert$affy_hg_u133a[idconvert$ensembl_gene_id%in%cons_down]),c(NA,''))
+write.table(cons_up_affy,file='./data/processed/humanBrainMicroarray_LuIncluded/consistent_up.grp',row.names=F,col.names=F,quote = F)
+write.table(cons_down_affy,file='./data/processed/humanBrainMicroarray_LuIncluded/consistent_down.grp',row.names=F,col.names=F,quote = F)
+```
+
+### Load results
+
+```{r}
+cmap=read.csv('./data/processed/humanBrainMicroarray_LuIncluded/CMap_results/20170410_consistent_byname.csv')
+cmap_cellline=read.csv('./data/processed/humanBrainMicroarray_LuIncluded/CMap_results/20170410_consistent_bynameandcellline.csv')
+p=as.numeric(as.character(cmap$p))
+p[complete.cases(p)]=p.adjust(p[complete.cases(p)],method='fdr')
+cmap$padj=p
+p=as.numeric(as.character(cmap_cellline$p))
+p[complete.cases(p)]=p.adjust(p[complete.cases(p)],method='fdr')
+cmap_cellline$padj=p
+cmap[which(cmap$padj<0.1),]
+cmap_cellline[which(cmap_cellline$padj<0.05),]
+```
+
+
+```{r}
+save(list=ls(),file = './data/processed/humanBrainMicroarray_LuIncluded/analysis.RData')
+```
+

@@ -1,0 +1,546 @@
+---
+title: "Plus and Minus Drugs - Genes"
+output:
+  html_notebook: default
+  html_document: 
+    toc: yes
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+# Data preparation
+
+```{r,message=F,warning=F}
+library(biomaRt)
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(ggrepel)
+library(pheatmap)
+library(RColorBrewer)
+library(BSDA)
+```
+
+```{r,warning=F,message=F}
+array_summary=read_csv('./data/processed/humanBrainMicroarray/CMap_results/all_consistent_byname.csv')
+array_detailed=read_csv('./data/processed/humanBrainMicroarray/CMap_results/all_consistent_detailed.csv')
+gtex_summary=read_csv('./data/processed/brainGTEx/CMap_results/GTEx_brain.csv')
+gtex_detailed=read_csv('./data/processed/brainGTEx/CMap_results/gtex_brain_detailed.csv')
+```
+
+```{r,message=F,warning=F}
+array_summary$p.adj=p.adjust(as.numeric(array_summary$p),method='fdr')
+gtex_summary$p.adj=p.adjust(as.numeric(gtex_summary$p),method='fdr')
+```
+
+```{r}
+array=full_join(array_summary,array_detailed,by='cmap name')
+colnames(array)=c('DrugRank','Name','MeanScore','n','Enrichment','p','Specificity','Non-NULL','Adj_p','ExperimentRank','Batch','Dose','CellLine','Score','Up','Down','InstanceID')
+gtex=full_join(gtex_summary,gtex_detailed,by='cmap name')
+colnames(gtex)=c('DrugRank','Name','MeanScore','n','Enrichment','p','Specificity','Non-NULL','Adj_p','ExperimentRank','Batch','Dose','CellLine','Score','Up','Down','InstanceID')
+combined=full_join(array,gtex,by='InstanceID')
+head(combined)
+combined=combined[,-c(19,21,28,29,30)]
+colnames(combined)=c('Array_DrugRank','Name','Array_MeanScore','n','Array_Enrichment','Array_p','Array_Specificity','Array_Non-NULL','Array_ADJp',
+                     'Array_ExperimentRank','Batch','Dose','CellLine','Array_Score','Array_Up','Array_Down','InstanceID',
+                     'GTEx_DrugRank','GTEx_MeanScore','GTEx_Enrichment','GTEx_p','GTEx_Specificity','GTEx_Non-NULL','GTEx_ADJp',
+                     'GTEx_ExperimentRank','GTEx_Score','GTEx_Up','GTEx_Down')
+rm(list=setdiff(ls(),'combined'))
+```
+
+```{r}
+head(combined)
+```
+
+```{r,message=F,warning=F}
+array_down=readRDS('./data/processed/humanBrainMicroarray/all_down_affy.rds')
+array_up=readRDS('./data/processed/humanBrainMicroarray/all_up_affy.rds')
+gtex_down=readLines('./data/processed/brainGTEx/down_affy.grp')
+gtex_up=readLines('./data/processed/brainGTEx/up_affy.grp')
+drugMat=fread('data/raw/CMap/amplitudeMatrix.txt')
+drug_colx=read.table('data/raw/CMap/amplitudeMatrix.txt',nrows = 1)
+```
+
+```{r}
+colnames(drugMat)=as.character(drug_colx[,as.character(colnames(drugMat))])
+```
+
+```{r}
+drugMat=drugMat[which(drugMat$`1`%in%c(array_up,array_down)),]
+```
+
+
+```{r,message=F,warning=F}
+drugTable=melt(drugMat)
+colnames(drugTable)=c('ProbeID','InstanceID','DrugChange')
+head(drugTable)
+```
+
+```{r}
+drugTable$ArrayChange='-'
+drugTable$ArrayChange[drugTable$ProbeID%in%array_up]='Up'
+drugTable$ArrayChange[drugTable$ProbeID%in%array_down]='Down'
+
+drugTable$GTExChange='-'
+drugTable$GTExChange[drugTable$ProbeID%in%gtex_up]='Up'
+drugTable$GTExChange[drugTable$ProbeID%in%gtex_down]='Down'
+```
+
+```{r}
+rm(list=setdiff(ls(),c('combined','drugTable')))
+drugTable$InstanceID=as.character(drugTable$InstanceID)
+combined$InstanceID=as.character(combined$InstanceID)
+```
+
+```{r}
+final_combined=full_join(combined,drugTable,by='InstanceID')
+```
+
+```{r}
+head(final_combined)
+```
+
+```{r}
+rm(list=setdiff(ls(),'final_combined'))
+```
+
+```{r}
+signiflist=filter(final_combined,Array_ADJp<=0.05 | GTEx_ADJp<=0.05)
+rm('final_combined')
+head(signiflist)
+dim(signiflist)
+```
+
+# Analysis of the Array Genes
+
+```{r,fig.width=16,fig.height=2.5}
+ggplot(signiflist,aes(x=DrugChange,fill=(Array_MeanScore)>0))+
+  facet_grid(ArrayChange~Name,scales='free')+
+  geom_density()+
+  theme_bw()+
+  guides(fill=guide_legend('(+) Drug'))
+```
+
+```{r}
+xx=signiflist %>% 
+  mutate(ArrayPositive=Array_MeanScore>0)%>%
+  group_by(ProbeID,ArrayPositive) %>%
+  select(Name,Array_MeanScore,Array_Score,Array_Down,Array_Up,DrugChange,ArrayChange) %>%
+  unique() %>%
+  group_by(ProbeID,Name) %>%
+  summarise(percpos=mean(DrugChange>0)) %>%
+  spread(value = percpos,key = ProbeID) %>%
+  as.data.frame()
+
+rownames(xx)=xx$Name
+xx$Name=NULL
+xx=as.matrix(xx)
+```
+
+```{r}
+xx[1:5,1:5]
+```
+
+
+```{r}
+colannot=signiflist %>%
+  select(ProbeID,ArrayChange) %>%
+  unique()
+colannot=as.data.frame(colannot)
+rownames(colannot)=colannot$ProbeID
+colannot$ProbeID=NULL
+```
+
+## All genes - heatmap
+
+```{r}
+pheatmap(t(xx),
+         annotation_row = colannot,
+         color = colorRampPalette(c('blue','gray95','red'))(19),
+         breaks = seq(0,abs(max(xx)),length.out = 20),
+         show_rownames = F,
+         # kmeans_k = 50,
+         cutree_rows = 4,cutree_cols = 4)
+```
+
+```{r,message=F,warning=F}
+drugInfo=read_csv('./druglist/drugInfo_final3.csv')
+names(drugInfo)[1]='Name'
+drugInfo$Name=unname(setNames(sort(unique(signiflist$Name)),sort(unique(drugInfo$Name)))[drugInfo$Name])
+```
+
+```{r}
+combined=full_join(signiflist,drugInfo,'Name')
+combined$DrugAge=rowSums((combined%>%select(`Rat Avg. Lifespan Extension`:`Yeast Avg. Lifespan Extension`))!='-')>0
+combined
+```
+
+```{r}
+# saveRDS(combined,file='./data/processed/humanBrainMicroarray/drugProfiles_combined.rds')
+rm(list=ls())
+```
+
+
+## Investigate causes and responses in ageing
+
+```{r}
+combined=readRDS('./data/processed/humanBrainMicroarray/drugProfiles_combined.rds')
+xx=combined %>%
+  filter(DrugAge==T) %>%
+  group_by(Name,ProbeID) %>%
+  summarise(percPos=mean(DrugChange>0),
+            percNeg=mean(DrugChange<0),
+            mean=mean(DrugChange),
+            median=median(DrugChange)) %>%
+  ungroup() %>%
+  unique() %>%
+  group_by(ProbeID) %>%
+  summarise(percPos_75higher=mean(percPos>0.6),
+            percNeg_75higher=mean(percNeg>0.6),
+            perc_meanPos=mean(mean>0),
+            perc_meanNeg=mean(mean<0),
+            perc_medianPos=mean(median>0),
+            perc_medianNeg=mean(median<0))
+drugPos=(xx %>% filter(percPos_75higher>=0.5) %>% select(ProbeID))$ProbeID
+drugNeg=(xx %>% filter(percNeg_75higher>=0.5) %>% select(ProbeID))$ProbeID
+
+resx=combined %>% 
+  select(ProbeID,ArrayChange) %>% 
+  unique()
+
+resx$ProLong='-'
+resx$ProLong[resx$ProbeID%in%drugPos]='Up'
+resx$ProLong[resx$ProbeID%in%drugNeg]='Down'
+DU=filter(resx,ArrayChange=='Down' & ProLong=='Up')$ProbeID
+UD=filter(resx,ArrayChange=='Up' & ProLong=='Down')$ProbeID
+UU=filter(resx,ArrayChange=='Up' & ProLong=='Up')$ProbeID
+DD=filter(resx,ArrayChange=='Down' & ProLong=='Down')$ProbeID
+table(resx$ArrayChange,resx$ProLong)
+```
+
+```{r}
+martx=useMart('ensembl','hsapiens_gene_ensembl')
+DU_E=unique(getBM(attributes = 'ensembl_gene_id',filters = 'affy_hg_u133a',values = DU,mart = martx)[,1])
+UD_E=unique(getBM(attributes = 'ensembl_gene_id',filters = 'affy_hg_u133a',values = UD,mart = martx)[,1])
+DD_E=unique(getBM(attributes = 'ensembl_gene_id',filters = 'affy_hg_u133a',values = DD,mart = martx)[,1])
+UU_E=unique(getBM(attributes = 'ensembl_gene_id',filters = 'affy_hg_u133a',values = UU,mart = martx)[,1])
+```
+
+```{r}
+mylist=list(DU=DU_E,
+            UD=UD_E,
+            DD=DD_E,
+            UU=UU_E)
+sapply(mylist,function(x)sapply(mylist,function(y)sum(x%in%y)))
+# mylist=sapply(mylist,function(x)setdiff(x,intersect(mylist$DU,mylist$DD)))
+# mylist=sapply(mylist,function(x)setdiff(x,intersect(mylist$UD,mylist$UU)))
+# sapply(mylist,function(x)sapply(mylist,function(y)sum(x%in%y)))
+```
+
+```{r}
+du_list=getBM(attributes = c('ensembl_gene_id','hgnc_symbol','description'),filters = 'ensembl_gene_id',values = DU_E,mart = martx)
+dd_list=getBM(attributes = c('ensembl_gene_id','hgnc_symbol','description'),filters = 'ensembl_gene_id',values = DD_E,mart = martx)
+uu_list=getBM(attributes = c('ensembl_gene_id','hgnc_symbol','description'),filters = 'ensembl_gene_id',values = UU_E,mart = martx)
+ud_list=getBM(attributes = c('ensembl_gene_id','hgnc_symbol','description'),filters = 'ensembl_gene_id',values = UD_E,mart = martx)
+```
+
+```{r}
+du_list$description=sapply(strsplit(du_list$description,'[[]'),function(x)x[1])
+# write_csv(du_list,path ='./data/processed/humanBrainMicroarray/AgeDown_DrugUp.csv')
+du_list
+```
+
+```{r}
+dd_list$description=sapply(strsplit(dd_list$description,'[[]'),function(x)x[1])
+# write_csv(dd_list,path ='./data/processed/humanBrainMicroarray/AgeDown_DrugDown.csv')
+dd_list
+```
+
+```{r}
+uu_list$description=sapply(strsplit(uu_list$description,'[[]'),function(x)x[1])
+# write_csv(uu_list,path ='./data/processed/humanBrainMicroarray/AgeUp_DrugUp.csv')
+uu_list
+```
+
+```{r}
+ud_list$description=sapply(strsplit(ud_list$description,'[[]'),function(x)x[1])
+# write_csv(ud_list,path ='./data/processed/humanBrainMicroarray/AgeUp_DrugDown.csv')
+ud_list
+```
+
+```{r}
+GO2Gene=readRDS('../shared/GO2Gene/GO2GeneBP_20170925.rds')
+load('../shared/GO2Gene/goterms_20170925.RData')
+numbs=data.frame(t(sapply(GO2Gene,function(go){
+  sapply(mylist,function(x)length(intersect(x,go)))
+})))
+numbs$DU2=numbs$UD+numbs$DD+numbs$UU
+numbs$UD2=numbs$DU+numbs$DD+numbs$UU
+numbs$DD2=numbs$UD+numbs$DU+numbs$UU
+numbs$UU2=numbs$UD+numbs$DD+numbs$DU
+numbs$Total=length(intersect(unique(unlist(GO2Gene)),unique(unlist(mylist))))
+numbs$DUTot=length(intersect(unique(unlist(GO2Gene)),unique(mylist$DU)))
+numbs$UDTot=length(intersect(unique(unlist(GO2Gene)),unique(mylist$UD)))
+numbs$DDTot=length(intersect(unique(unlist(GO2Gene)),unique(mylist$DD)))
+numbs$UUTot=length(intersect(unique(unlist(GO2Gene)),unique(mylist$UU)))
+numbs$DU3=numbs$DUTot-numbs$DU
+numbs$UD3=numbs$UDTot-numbs$UD
+numbs$UU3=numbs$UUTot-numbs$UU
+numbs$DD3=numbs$DDTot-numbs$DD
+numbs$DU4=numbs$Total-numbs$DU-numbs$DU2-numbs$DU3
+numbs$DD4=numbs$Total-numbs$DD-numbs$DD2-numbs$DD3
+numbs$UD4=numbs$Total-numbs$UD-numbs$UD2-numbs$UD3
+numbs$UU4=numbs$Total-numbs$UU-numbs$UU2-numbs$UU3
+DUres=t(apply(numbs,1,function(x){
+  fi=fisher.test(matrix(c(x['DU'],x['DU2'],x['DU3'],x['DU4']),ncol=2))
+  c(DUOdds=fi$estimate,DUp=fi$p.value)
+}))
+numbs$DUOdds=DUres[,1]
+numbs$DU.p=DUres[,2]
+
+DDres=t(apply(numbs,1,function(x){
+  fi=fisher.test(matrix(c(x['DD'],x['DD2'],x['DD3'],x['DD4']),ncol=2))
+  c(DDOdds=fi$estimate,DDp=fi$p.value)
+}))
+numbs$DDOdds=DDres[,1]
+numbs$DD.p=DDres[,2]
+
+UUres=t(apply(numbs,1,function(x){
+  fi=fisher.test(matrix(c(x['UU'],x['UU2'],x['UU3'],x['UU4']),ncol=2))
+  c(UUOdds=fi$estimate,UUp=fi$p.value)
+}))
+numbs$UUOdds=UUres[,1]
+numbs$UU.p=UUres[,2]
+
+UDres=t(apply(numbs,1,function(x){
+  fi=fisher.test(matrix(c(x['UD'],x['UD2'],x['UD3'],x['UD4']),ncol=2))
+  c(UDOdds=fi$estimate,UDp=fi$p.value)
+}))
+numbs$UDOdds=UDres[,1]
+numbs$UD.p=UDres[,2]
+numbs$GOSize=numbs$DU+numbs$DU2
+numbs$GOID=rownames(numbs)
+numbs$GOTerm=terms[numbs$GOID]
+```
+
+```{r}
+xx=numbs %>%
+  dplyr::select(GOID,GOTerm,GOSize,DUOdds,DU.p,UDOdds,UD.p,UUOdds,UU.p,DDOdds,DD.p) %>%
+  group_by(GOID) %>%
+  mutate(max=max(DUOdds,UDOdds,DDOdds,UUOdds)) %>%
+  ungroup()%>%
+  arrange(desc(max))%>%
+  filter(GOSize >=5 & GOSize <=50) %>%
+  select(-max)
+colnames(xx)=c('GOID','GOTerm','GOSize','DU','DU_p','UD','UD_p','UU','UU_p','DD','DD_p')
+# write_csv(xx,'./data/processed/humanBrainMicroarray/DrugGO.csv')
+xx
+```
+
+## Up in ageing & Up-regulated by pro-longevity drugs: Up regulated as response
+
+```{r}
+numbs %>%
+   dplyr::select(GOID,GOTerm,GOSize,UU,UU2,UU3,UU4,UUOdds,UU.p) %>%
+  filter(GOSize >=5 & GOSize <=20) %>%
+  mutate(UU.padj=p.adjust(UU.p,method='fdr'))%>%
+  arrange(desc(UUOdds)) %>%
+filter(UUOdds >=2)
+```
+
+## Down in ageing & Up-regulated by pro-longevity drugs: Down regulation is bad, should be reversed! 
+
+```{r}
+numbs %>%
+   dplyr::select(GOID,GOTerm,GOSize,DU,DU2,DU3,DU4,DUOdds,DU.p) %>%
+  filter(GOSize >=5& GOSize <=20) %>%
+  mutate(DU.padj=p.adjust(DU.p,method='fdr'))%>%
+  arrange(desc(DUOdds)) %>%
+filter(DUOdds >=2)
+```
+
+## Down in ageing & Down-regulated by pro-longevity drugs: Down regulated as response
+
+```{r}
+numbs %>%
+   dplyr::select(GOID,GOTerm,GOSize,DD,DD2,DD3,DD4,DDOdds,DD.p) %>%
+  filter(GOSize >=5& GOSize <=20) %>%
+  mutate(DD.padj=p.adjust(DD.p,method='fdr'))%>%
+  arrange(desc(DDOdds)) %>%
+filter(DDOdds >=2)
+```
+
+## Up in ageing & Down-regulated by pro-longevity drugs: Up regulation is bad, should be reversed! 
+
+```{r}
+numbs %>%
+   dplyr::select(GOID,GOTerm,GOSize,UD,UD2,UD3,UD4,UDOdds,UD.p) %>%
+  filter(GOSize >=5& GOSize <=20) %>%
+  mutate(UD.padj=p.adjust(UD.p,method='fdr'))%>%
+  arrange(desc(UDOdds)) %>%
+filter(UDOdds >=2)
+```
+
+## Summary of functional analysis - Ups & Downs and Causes & Responses
+
+```{r,fig.height=16,fig.width=4}
+xx=numbs %>%
+  filter(GOSize>=5 & GOSize<=20)%>%
+  dplyr::select(DUOdds,DDOdds,UUOdds,UDOdds,GOTerm)
+colnames(xx)[1:4]=c('DownUp - Cause',
+               'DownDown - Response',
+               'UpUp - Response',
+               'UpDown - Cause')
+rownames(xx)=xx$GOTerm
+xx$GOTerm=NULL
+xx=log2(as.matrix(xx))
+xx[xx==-Inf]=-ceiling(sort(unique(c(abs(xx))),dec=T)[2])
+xx[xx==Inf]=ceiling(sort(unique(c(abs(xx))),dec=T)[2])
+xx=xx[!rowSums(abs(xx)>2)==0,]
+brx=seq(-max(abs(xx)),max(abs(xx)),length.out = 20)
+clx=colorRampPalette(c('blue','gray95','red'))(19)
+# clx[brx<1 & brx>(-1)]='gray95'
+pheatmap(xx,
+         color = clx,
+         breaks = brx,
+         cutree_cols = 2,cutree_rows = 10)
+```
+
+## The other drugs: pro- or anti-longevity?
+
+```{r,fig.width=3,fig.height=4}
+uu=combined %>%
+  filter(ProbeID%in%UU) %>%
+  select(ProbeID,DrugChange,Name,DrugAge) %>%
+  unique() %>%
+  group_by(Name,ProbeID,DrugAge) %>%
+  summarise(percPos=mean(DrugChange>0))%>%
+  spread(value = percPos,key = ProbeID) %>%
+  as.data.frame()
+
+ud=combined %>%
+  filter(ProbeID%in%UD) %>%
+  select(ProbeID,DrugChange,Name) %>%
+  unique() %>%
+  group_by(Name,ProbeID) %>%
+  summarise(percPos=mean(DrugChange>0))%>%
+  spread(value = percPos,key = ProbeID) %>%
+  as.data.frame()
+
+dd=combined %>%
+  filter(ProbeID%in%DD) %>%
+  select(ProbeID,DrugChange,Name) %>%
+  unique() %>%
+  group_by(Name,ProbeID) %>%
+  summarise(percPos=mean(DrugChange>0))%>%
+  spread(value = percPos,key = ProbeID) %>%
+  as.data.frame()
+
+du=combined %>%
+  filter(ProbeID%in%DU) %>%
+  select(ProbeID,DrugChange,Name) %>%
+  unique() %>%
+  group_by(Name,ProbeID) %>%
+  summarise(percPos=mean(DrugChange>0))%>%
+  spread(value = percPos,key = ProbeID) %>%
+  as.data.frame()
+
+drage=uu$DrugAge
+uu$DrugAge=NULL
+nm=uu$Name
+uu$Name=NULL
+ud$Name=NULL
+du$Name=NULL
+dd$Name=NULL
+resx=data.frame(Name=nm,DrugAge=as.factor(drage),
+           UU=apply(uu,1,function(x)mean(x>0.5)),
+           DU=apply(du,1,function(x)mean(x>0.5)),
+           DD=apply(dd,1,function(x)mean(x<0.5)),
+           UD=apply(ud,1,function(x)mean(x<0.5)))
+rownames(resx)=resx$Name
+annotrow=(combined %>% select(Name,Array_MeanScore,DrugAge) %>% unique() %>% data.frame())
+rownames(annotrow)=annotrow$Name
+annotrow$Name=NULL
+annotrow$DrugAge=as.factor(c('-','+')[1+(annotrow$DrugAge)])
+annotrow$DrugSign=as.factor(c('-','+')[1+(annotrow$Array_MeanScore>0)])
+annotrow$Array_MeanScore=NULL
+
+# brx1=seq(-1,1,by=0.001)
+# clx1=colorRampPalette(brewer.pal(3,'PrGn'))(length(brx1))
+rowcolors=list(DrugSign=setNames(brewer.pal(4,'Set1')[1:2],c('+','-')),
+               DrugAge=setNames(brewer.pal(4,'Set1')[3:4],c('+','-')))
+
+brx=seq(0,1,length.out = 20)
+clx=colorRampPalette(c('blue','gray95','red'))(19)
+xx=resx[,3:6]
+colnames(xx)=paste(colnames(xx),'_',sapply(list(uu,du,dd,ud),ncol),sep='')
+pheatmap(xx,
+         annotation_row =annotrow,annotation_colors = rowcolors,
+         color = clx,
+         breaks = brx,display_numbers = T,number_color = 'gray95',
+         cutree_rows = 6)
+# pheatmap(xx,
+#          annotation_row =annotrow,annotation_colors = rowcolors,
+#          color = clx,
+#          breaks = brx,display_numbers = T,number_color = 'gray95',
+#          cutree_rows = 6,filename = './results/article/drugSign.pdf')
+```
+
+```{r, fig.height=10, fig.width=15}
+xx=combined%>%
+  filter(ProbeID%in%c(UU,DU,DD,UD))%>%
+  select(InstanceID,DrugChange,ProbeID)%>%
+  unique()%>%
+  spread(key = ProbeID,value = DrugChange)
+inst=xx$InstanceID
+xx$InstanceID=NULL
+xx=as.matrix(xx)
+rownames(xx)=inst
+
+rowannot=combined %>% 
+  mutate(DrugSign=Array_MeanScore>0) %>%
+  select(InstanceID,Name,DrugSign,DrugAge)%>%
+  unique()%>%
+  data.frame()
+rownames(rowannot)=rowannot$InstanceID
+rowannot$InstanceID=NULL
+rowannot$Name=as.factor(rowannot$Name)
+rowannot$DrugAge=as.factor(c('-','+')[1+(rowannot$DrugAge)])
+rowannot$DrugSign=as.factor(c('-','+')[1+(rowannot$DrugSign)])
+brx=seq(-max(abs(xx)),max(abs(xx)),length.out = 100)
+clx=colorRampPalette(c('blue','gray95','red'))(99)
+rowcolors=list(DrugSign=setNames(brewer.pal(8,'Set1')[1:2],c('+','-')),
+               DrugAge=setNames(brewer.pal(8,'Set1')[3:4],c('+','-')),
+               ProLong=setNames(brewer.pal(8,'Set1')[5:6],c('Down','Up')),
+               ArrayChange=setNames(brewer.pal(8,'Set1')[7:8],c('Down','Up')),
+               Name=setNames(c(brewer.pal(8,'Set2'),brewer.pal(8,'Set3'),brewer.pal(8,'Dark2')),unique(rowannot$Name)))
+
+colannot=combined %>% 
+  select(ProbeID,ArrayChange) %>% 
+  unique() %>%
+  data.frame()
+
+colannot$ProLong='-'
+colannot$ProLong[colannot$ProbeID%in%drugPos]='Up'
+colannot$ProLong[colannot$ProbeID%in%drugNeg]='Down'
+rownames(colannot)=colannot$ProbeID
+colannot$ProbeID=NULL
+colannot=colannot[colnames(xx),]
+pheatmap(xx,
+         annotation_row = rowannot,annotation_colors = rowcolors,
+         annotation_col = colannot,
+         show_rownames = F,
+         color = clx,
+         breaks = brx,
+         show_colnames = F,
+         cutree_rows = 2, cutree_cols = 2)
+```
+
+```{r}
+save(list=ls(),file='./scripts/DrugSign_gene/all.RData')
+```
+

@@ -1,0 +1,130 @@
+---
+title: "Functional analysis of the gene list"
+output:
+  html_notebook: default
+  html_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r}
+library(clustermq)
+library(knitr)
+```
+
+
+```{r}
+array_up=readRDS('./data/processed/humanBrainMicroarray/all_up_ensembl.rds')
+array_down=readRDS('./data/processed/humanBrainMicroarray/all_down_ensembl.rds')
+array_bg=readRDS('./data/processed/humanBrainMicroarray/all_bg_ensembl.rds')
+```
+
+```{r}
+GO2Gene=readRDS('../shared/GO2Gene/GO2GeneBP_20170925.rds')
+load('../shared/GO2Gene/goterms_20170925.RData')
+```
+
+```{r}
+GO2Gene=sapply(GO2Gene,function(x)intersect(x,array_bg))
+```
+
+```{r}
+gobplist=names(which(sapply(GO2Gene,length)>10))
+allgenes=intersect(unique(unlist(sapply(gobplist,function(go)GO2Gene[[go]]))),array_bg)
+odds=as.data.frame(t(sapply(gobplist,function(go){
+  go=GO2Gene[[go]]
+  go_up=intersect(array_up,go)
+  go_down=intersect(array_down,go)
+  go_bg=intersect(array_bg,go)
+  c(up_GO=length(go_up),down_GO=length(go_down),bg_GO=length(go_bg))
+})))
+odds$up_All=length(intersect(array_up,allgenes))
+odds$down_All=length(intersect(array_down,allgenes))
+odds$bg_All=length(intersect(array_bg,allgenes))
+odds_up=data.frame(a=odds$up_GO)
+odds_up$b=odds$bg_GO-odds$up_GO
+odds_up$c=odds$up_All-odds$up_GO
+odds_up$d=odds$bg_All-odds_up$a-odds_up$b-odds_up$c
+rownames(odds_up)=rownames(odds)
+odds_up=cbind(odds_up,t(apply(odds_up,1,function(x){
+  fi=fisher.test(matrix(x,ncol=2))
+  c(fi$est,p=fi$p.val)})))
+odds_up$p.adj=p.adjust(odds_up$p,method='fdr')
+
+odds_down=data.frame(a=odds$down_GO)
+odds_down$b=odds$bg_GO-odds$down_GO
+odds_down$c=odds$down_All-odds$down_GO
+odds_down$d=odds$bg_All-odds_down$a-odds_down$b-odds_down$c
+rownames(odds_down)=rownames(odds)
+odds_down=cbind(odds_down,t(apply(odds_down,1,function(x){
+  fi=fisher.test(matrix(x,ncol=2))
+  c(fi$est,p=fi$p.val)})))
+odds_down$p.adj=p.adjust(odds_down$p,method='fdr')
+```
+
+```{r}
+data.frame(term=terms[rownames(odds_down)[which(odds_down$p.adj<0.05)]],odds_down[which(odds_down$p.adj<0.05),])
+data.frame(term=terms[rownames(odds_up)[which(odds_up$p.adj<0.05)]],odds_up[which(odds_up$p.adj<0.05),])
+```
+
+```{r}
+fx2=function(i){readRDS(paste('/nfs/research2/thornton/melike/humanAgeing_CMap/data/processed/permutation/cormat/perm',i,'.rds',sep=''))}
+exprs_perms=Q(fx2,i=1:1000,n_jobs = 50)
+perms=lapply(exprs_perms[1:1000],function(exprs_perm1){
+ exprs_perm1=exprs_perm1[complete.cases(exprs_perm1),]
+perm_up=names(sort(rowSums(exprs_perm1>0,na.rm=T),dec=T)[1:length(array_up)])
+perm_down=names(sort(rowSums(exprs_perm1<0,na.rm=T),dec=T)[1:length(array_down)])
+perm_allgenes=intersect(unique(unlist(sapply(gobplist,function(go)GO2Gene[[go]]))),rownames(exprs_perm1))
+perm_odds=as.data.frame(t(sapply(gobplist,function(go){
+  go=GO2Gene[[go]]
+  go_up=intersect(perm_up,go)
+  go_down=intersect(perm_down,go)
+  go_bg=intersect(rownames(exprs_perm1),go)
+  c(up_GO=length(go_up),down_GO=length(go_down),bg_GO=length(go_bg))
+})))
+perm_odds$up_All=length(intersect(perm_up,allgenes))
+perm_odds$down_All=length(intersect(perm_down,allgenes))
+perm_odds$bg_All=length(intersect(rownames(exprs_perm1),allgenes))
+perm_odds_up=data.frame(a=perm_odds$up_GO)
+perm_odds_up$b=perm_odds$bg_GO-perm_odds$up_GO
+perm_odds_up$c=perm_odds$up_All-perm_odds$up_GO
+perm_odds_up$d=perm_odds$bg_All-perm_odds_up$a-perm_odds_up$b-perm_odds_up$c
+rownames(perm_odds_up)=rownames(perm_odds)
+perm_odds_up=cbind(perm_odds_up,t(apply(perm_odds_up,1,function(x){
+  fi=fisher.test(matrix(x,ncol=2))
+  c(fi$est,p=fi$p.val)})))
+perm_odds_up$p.adj=p.adjust(perm_odds_up$p,method='fdr')
+
+perm_odds_down=data.frame(a=perm_odds$down_GO)
+perm_odds_down$b=perm_odds$bg_GO-perm_odds$down_GO
+perm_odds_down$c=perm_odds$down_All-perm_odds$down_GO
+perm_odds_down$d=perm_odds$bg_All-perm_odds_down$a-perm_odds_down$b-perm_odds_down$c
+rownames(perm_odds_down)=rownames(perm_odds)
+perm_odds_down=cbind(perm_odds_down,t(apply(perm_odds_down,1,function(x){
+  fi=fisher.test(matrix(x,ncol=2))
+  c(fi$est,p=fi$p.val)})))
+perm_odds_down$p.adj=p.adjust(perm_odds_down$p,method='fdr')
+cbind(up=perm_odds_up$`odds ratio`,down=perm_odds_down$`odds ratio`)  
+})
+saveRDS(perms,file='./data/processed/humanBrainMicroarray/permutation_GO.rds')
+```
+
+```{r}
+perm_up=sapply(perms,function(x)x[,1])
+perm_down=sapply(perms,function(x)x[,2])
+```
+
+```{r}
+data.frame(terms=terms[rownames(odds_up)[which(p.adjust(sapply(1:nrow(perm_up),function(i){
+  mean(perm_up[i,]>=odds_up$`odds ratio`[i])
+}),method='fdr')<=0.05)]])
+
+data.frame(terms=terms[rownames(odds_down)[which(p.adjust(sapply(1:nrow(perm_down),function(i){
+  mean(perm_down[i,]>=odds_down$`odds ratio`[i])
+}),method='fdr')<=0.05)]])
+```
+

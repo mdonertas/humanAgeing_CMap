@@ -1,0 +1,23 @@
+---
+title: "Dataset Correlations"
+output: html_notebook
+---
+
+```{r}
+load('./data/article.RData')
+rm(list=setdiff(ls(),c('corx_all','corx_array','corx_gtex')))
+```
+
+```{r}
+dnames=sapply(strsplit(colnames(corx_array),'_'),function(x)x[1])
+corsx=corx_array[sapply(dnames,function(nm)nm!=dnames) & upper.tri(corx_array)]
+summary(corsx)
+hist(corsx,br=30)
+```
+
+```{r}
+dnames=sapply(strsplit(colnames(corx_all),'_'),function(x)x[1])
+corsx=corx_all[sapply(dnames,function(nm)nm!=dnames) & upper.tri(corx_all)]
+summary(corsx)
+hist(corsx,br=30)
+```
