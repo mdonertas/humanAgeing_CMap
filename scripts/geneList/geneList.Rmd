@@ -1,0 +1,50 @@
+---
+title: "Gene Lists"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r}
+load('./data/article.RData')
+rm(list=setdiff(ls(),c('gtex_down','gtex_up','array_down','array_up')))
+```
+
+```{r}
+mylist=list(gtex_down=gtex_down,gtex_up=gtex_up,array_up=array_up,array_down=array_down)
+sapply(mylist,function(x)sapply(mylist,function(y)sum(x%in%y)))
+```
+
+
+```{r}
+genelist=unique(c(array_down,array_up,gtex_down,gtex_up))
+```
+
+```{r}
+library(biomaRt)
+genedesc=getBM(attributes = c('ensembl_gene_id','hgnc_symbol','description'),filters = 'ensembl_gene_id',values = genelist,mart = useMart('ensembl','hsapiens_gene_ensembl'))
+```
+
+```{r}
+genedesc$description=sapply(strsplit(genedesc$description,'[[]'),function(x)x[1])
+genedesc$Microarray='-'
+genedesc$GTEx='-'
+genedesc$Microarray[genedesc$ensembl_gene_id%in%array_down]='down'
+genedesc$Microarray[genedesc$ensembl_gene_id%in%array_up]='up'
+genedesc$GTEx[genedesc$ensembl_gene_id%in%gtex_down]='down'
+genedesc$GTEx[genedesc$ensembl_gene_id%in%gtex_up]='up'
+```
+
+```{r}
+genedesc
+```
+
+```{r}
+library(tidyverse)
+write_csv(genedesc,path = './data/processed/geneList.csv')
+```
+
