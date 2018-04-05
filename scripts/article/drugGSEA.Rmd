@@ -1,0 +1,216 @@
+---
+title: "Drug GSEA"
+author: "Melike Donertas"
+date: "05/04/2018"
+output:
+  pdf_document: 
+    keep_tex: yes
+    toc: yes
+  word_document: default
+  html_document: default
+classoption: a4paper
+fontsize: 10pt
+geometry: margin=1in
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,cache=T, message=F, warning=F, tidy=TRUE, tidy.opts=list(width.cutoff=55),eval=F)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+# Analysis of Drug Effects to Differentiate Drugs with Positive and Negative Effects
+
+```{r,message=F,warning=F,eval=T}
+library(tidyverse)
+library(data.table)
+library(biomaRt)
+library(clusterProfiler)
+library(ggpubr)
+library(pheatmap)
+library(igraph)
+library(scales)
+library(ggrepel)
+library(org.Hs.eg.db)
+library(corrplot)
+```
+
+
+```{r}
+array_summary=read_csv('./data/processed/humanBrainMicroarray/CMap_results/all_consistent_byname.csv')
+array_detailed=read_csv('./data/processed/humanBrainMicroarray/CMap_results/all_consistent_detailed.csv')
+gtex_summary=read_csv('./data/processed/brainGTEx/CMap_results/GTEx_brain.csv')
+gtex_detailed=read_csv('./data/processed/brainGTEx/CMap_results/gtex_brain_detailed.csv')
+array_summary$p.adj=p.adjust(as.numeric(array_summary$p),method='fdr')
+gtex_summary$p.adj=p.adjust(as.numeric(gtex_summary$p),method='fdr')
+array=full_join(array_summary,array_detailed,by='cmap name')
+colnames(array)=c('DrugRank','Name','MeanScore','n','Enrichment','p','Specificity','Non-NULL','Adj_p','ExperimentRank','Batch','Dose','CellLine','Score','Up','Down','InstanceID')
+gtex=full_join(gtex_summary,gtex_detailed,by='cmap name')
+colnames(gtex)=c('DrugRank','Name','MeanScore','n','Enrichment','p','Specificity','Non-NULL','Adj_p','ExperimentRank','Batch','Dose','CellLine','Score','Up','Down','InstanceID')
+combined=full_join(array,gtex,by='InstanceID')
+combined=combined[,-c(19,21,28,29,30)]
+colnames(combined)=c('Array_DrugRank','Name','Array_MeanScore','n','Array_Enrichment','Array_p','Array_Specificity','Array_Non-NULL','Array_ADJp',
+                     'Array_ExperimentRank','Batch','Dose','CellLine','Array_Score','Array_Up','Array_Down','InstanceID',
+                     'GTEx_DrugRank','GTEx_MeanScore','GTEx_Enrichment','GTEx_p','GTEx_Specificity','GTEx_Non-NULL','GTEx_ADJp',
+                     'GTEx_ExperimentRank','GTEx_Score','GTEx_Up','GTEx_Down')
+rm(list=setdiff(ls(),'combined'))
+combined=combined%>%
+  mutate(InstanceID=as.character(InstanceID))
+```
+
+```{r}
+array_down=readRDS('./data/processed/humanBrainMicroarray/all_down_affy.rds')
+array_up=readRDS('./data/processed/humanBrainMicroarray/all_up_affy.rds')
+gtex_down=readLines('./data/processed/brainGTEx/down_affy.grp')
+gtex_up=readLines('./data/processed/brainGTEx/up_affy.grp')
+drugMat=fread('data/raw/CMap/amplitudeMatrix.txt')
+drug_colx=read.table('data/raw/CMap/amplitudeMatrix.txt',nrows = 1)
+colnames(drugMat)=as.character(drug_colx[,as.character(colnames(drugMat))])
+```
+
+```{r}
+idmap=getBM(attributes = c('affy_hg_u133a','entrezgene'),filters = 'affy_hg_u133a',values = drugMat[[1]],mart = useMart('ensembl','hsapiens_gene_ensembl'))
+```
+
+```{r}
+idmap=idmap%>%
+  na.omit()
+unqids=(idmap %>%
+  group_by(affy_hg_u133a)%>%
+  summarise(n=n())%>%
+  filter(n==1))$affy_hg_u133a
+```
+
+```{r}
+drugMat=drugMat[which(drugMat$`1`%in%unqids),]
+```
+
+```{r}
+drugTable=melt(drugMat)
+drugTable=drugTable%>%
+  rename(affyID=`1`,InstanceID=variable,DE=value)
+idmap=idmap%>%
+  rename(affyID=affy_hg_u133a,geneID=entrezgene)%>%
+  filter(affyID%in%unqids)
+ultDrugTable=full_join(idmap,drugTable)
+```
+
+```{r}
+ult_combined=ultDrugTable%>%
+  mutate(InstanceID=as.character(InstanceID))%>%
+  left_join(combined)
+```
+
+```{r}
+rm(list=setdiff(ls(),'ult_combined'))
+```
+
+```{r}
+ult_combined=ult_combined%>%
+  filter(Array_ADJp<=0.05 | GTEx_ADJp<=0.05)
+```
+
+```{r}
+ult_combined=ult_combined%>%
+  group_by(Name,Batch,Dose,CellLine,InstanceID,geneID)%>%
+  summarise(geneDE=median(DE))
+```
+
+```{r}
+saveRDS(ult_combined,'./data/processed/signifDrug_DEforgenes.rds')
+```
+
+```{r}
+ult_combined=readRDS('./data/processed/signifDrug_DEforgenes.rds')
+```
+
+
+```{r}
+sortedGeneList=lapply(unique(ult_combined$Name),function(inst){
+  xx=filter(ult_combined,Name==inst)
+  xx_summarised=(xx)%>%
+    group_by(geneID,Name)%>%
+    summarise(geneDE=median(geneDE))
+  xx=setNames(xx_summarised$geneDE,xx_summarised$geneID)
+  sort(xx,dec=T)
+})
+names(sortedGeneList)=unique(ult_combined$Name)
+saveRDS(sortedGeneList,'./data/processed/signifDrug_sorted_genelist_for_drugs.rds')
+```
+
+```{r}
+sortedGeneList=readRDS('./data/processed/signifDrug_sorted_genelist_for_drugs.rds')
+```
+
+```{r}
+kegg_gsea=list()
+for(drug in names(sortedGeneList)){
+  genesx=sortedGeneList[[drug]]  
+  genesx=sort(genesx[complete.cases(genesx)],dec=T)
+  kk2 <- gseKEGG(geneList   = genesx,
+               organism     = 'hsa',
+               nPerm        = 1000,
+               minGSSize    = 50,
+               verbose      = T,
+               pAdjustMethod = 'fdr',
+               pvalueCutoff = 1,
+               keyType = 'kegg')
+  kegg_gsea[[drug]]=kk2@result
+}
+saveRDS(kegg_gsea,'./data/processed/signifDrug_GSEA_kegg.rds')
+```
+
+```{r,eval=T}
+kegg_gsea=readRDS('./data/processed/signifDrug_GSEA_kegg.rds')
+```
+
+```{r,eval=T,fig.height=6,fig.width=6,fig.cap="Pairwise Spearman\'s rank correlation coefficients of KEGG Pathway enrichment scores among drugs. The intensity of the colours on the heatmap shows the magnitude of the correlation coefficient.\\label{corplot_kegg}"}
+pathnms=unique(unlist(lapply(kegg_gsea,function(x)x$Description)))
+pathsize=sapply(kegg_gsea,function(x)setNames(x$setSize,x$Description)[pathnms])
+# any(!(pathsize==pathsize[,1])) # all drugs have equal number f genes in each pathway
+pathNES=sapply(kegg_gsea,function(x)setNames(x$NES,x$Description)[pathnms])
+cormatrix=cor(pathNES,use='pairwise',method='s')
+annotx=data.frame(inDrugAge=rep('No',24))%>%
+  mutate(inDrugAge=as.character(inDrugAge))
+rownames(annotx)=colnames(cormatrix)
+annotx[c(8,11,21,17,24,12,14),]="Yes"
+
+corrplot(cormatrix,order = 'hclust',method = 'square',
+         diag = T,addrect = 10,
+         tl.col='gray25',addgrid.col = NA)
+```
+
+```{r}
+go_gsea=list()
+for(drug in names(sortedGeneList)){
+  genesx=sortedGeneList[[drug]]  
+  genesx=sort(genesx[complete.cases(genesx)],dec=T)
+  kk2 <- gseGO(geneList   = genesx,
+               ont = 'BP',
+               OrgDb=org.Hs.eg.db,
+               nPerm        = 1000,
+               minGSSize    = 50,
+               maxGSSize = 200,
+               verbose      = T,
+               pAdjustMethod = 'fdr',
+               pvalueCutoff = 1)
+  go_gsea[[drug]]=kk2@result
+}
+saveRDS(go_gsea,'./data/processed/signifDrug_GSEA_go.rds')
+```
+
+```{r,eval=T}
+go_gsea=readRDS('./data/processed/signifDrug_GSEA_go.rds')
+```
+
+```{r,eval=T,fig.height=6,fig.width=6,fig.cap="Pairwise Spearman\'s rank correlation coefficients of GO BP enrichment scores among drugs. The intensity of the colours on the heatmap shows the magnitude of the correlation coefficient.\\label{corplot_go}"}
+pathnms=unique(unlist(lapply(go_gsea,function(x)x$Description)))
+pathsize=sapply(go_gsea,function(x)setNames(x$setSize,x$Description)[pathnms])
+# any(!(pathsize==pathsize[,1])) # all drugs have equal number f genes in each pathway
+pathNES=sapply(go_gsea,function(x)setNames(x$NES,x$Description)[pathnms])
+pathNES=pathNES[rownames(pathsize)[which(pathsize[,1]<=75)],]
+cormatrix=cor(pathNES,use='pairwise',method='s')
+corrplot(cormatrix,order = 'hclust',method = 'square',
+         diag = T,addrect = 10,
+         tl.col='gray25',addgrid.col = NA)
+```
