@@ -1,0 +1,59 @@
+---
+title: "Drug Side Effects"
+author: "Melike Donertas"
+date: "03/04/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,cache=T, message=F, warning=F, tidy=TRUE, tidy.opts=list(width.cutoff=55))
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r,message=F,warning=F}
+library(tidyverse)
+```
+
+
+# What are the side effects associated with the drugs we identify?
+
+Use the file Matias sent: "I did some time ago a mapping from the meddra codes in sider to organ systems that can be useful now."
+
+```{r}
+load('./data/article.RData')
+meddra=read_csv('~/GD/shared/SIDER/side_effects_systems.csv')%>%
+  mutate(pubchem=as.character(pubchem))
+```
+
+```{r}
+mapping=unique(tibble(CMap_Name=idconvert$CMap,pubchem=rownames(idconvert)))
+mapforsignif=mapping%>%
+  filter(CMap_Name%in%signifdruglist)%>%
+  filter((!is.na(CMap_Name))&(!is.na(pubchem)))%>%
+  unique()
+```
+
+```{r}
+sideeffects=mapforsignif %>%
+  left_join(meddra)
+```
+
+```{r}
+sideeffects=unique(sideeffects[complete.cases(sideeffects),])
+```
+
+```{r}
+unique(sideeffects$CMap_Name)
+```
+
+```{r}
+finlist=sideeffects%>%
+  dplyr::select(CMap_Name,sideeffect.name,soc)%>%
+  unique()
+finlist
+```
+
+```{r}
+write_csv(x = finlist,path = './data/side_effects_forSignifDrugs.csv')
+```
+
