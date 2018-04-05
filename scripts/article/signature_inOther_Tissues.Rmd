@@ -1,0 +1,169 @@
+---
+title: "Ageing Signature in Other Tissues"
+author: "Melike Donertas"
+date: "05/04/2018"
+output:
+  pdf_document: 
+    keep_tex: yes
+    toc: yes
+  word_document: default
+  html_document: default
+classoption: a4paper
+fontsize: 10pt
+geometry: margin=1in
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,cache=T, message=F, warning=F, tidy=TRUE, tidy.opts=list(width.cutoff=55))
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+# Results
+
+## Correlations among tissues
+
+```{r}
+source('~/GD/shared/functions/functions.R')
+library(tidyverse)
+library(pheatmap)
+library(ggpubr)
+library(scales)
+```
+
+```{r}
+load('./data/article.RData')
+rm(list=setdiff(ls(),c('gtex_down','gtex_up','array_down','array_up')))
+```
+
+```{r}
+gtex_exp=readRDS('./data/processed/GTEx/cormat.rds')
+tissue_cors=cor(gtex_exp,use='pairwise',method='s')
+```
+
+```{r gtex_cors,fig.cap='Pairwise Spearman\'s rank correlation coefficients across GTEx tissues. The intensity of the colours on the heatmap shows the magnitude of the correlation coefficient.\\label{gtex_cors}',fig.height=6,fig.width=9}
+myheatmap=pheatmap(tissue_cors,
+        color = colorRampPalette(c(muted('lightblue'),'white','darkred'))(30),
+         breaks=seq(-1,1,length.out = 31),
+         show_colnames = F,cellwidth = 10,cellheight = 10,
+         cutree_rows = 2,cutree_cols = 2,border_color = NA,
+        # display_numbers = T, number_format = '%.1f',number_color = 'gray25',
+        silent = T)
+grid::grid.newpage()
+grid::grid.draw(myheatmap$gtable)
+```
+
+Since the analysis is based on ageing signature compiled using brain tissue only, we next sought to understand if this ageing signature is a representative of other tissues. A plausible way to approach this question is conducting the same analysis in other tissues. However it is not straightforward because i) the number of datasets available for the other tissues limit the capacity of our approach to compile consistent signature and increase false positives and ii) the ageing-related changes in other tissues are not as consistent as in brain (Fig. \ref{gtex_cors}). 
+
+## Ageing signature calculated using microarray datasets
+
+```{r}
+upgenes=intersect(array_up,rownames(gtex_exp))
+downgenes=intersect(array_down,rownames(gtex_exp))
+gtex_subset=gtex_exp[unique(c(upgenes,downgenes)),]
+```
+
+```{r}
+upprop=colMeans(gtex_subset[upgenes,]>0,na.rm=T)
+downprop=colMeans(gtex_subset[downgenes,]<0,na.rm=T)
+props=data.frame(upgenes=upprop,downgenes=downprop)
+```
+
+```{r}
+ord=hclust(dist(props))$order
+```
+
+```{r}
+upperm=sapply(1:10000,function(i)colMeans(gtex_exp[sample(rownames(gtex_exp),length(upgenes)),]>0,na.rm=T))
+downperm=sapply(1:10000,function(i)colMeans(gtex_exp[sample(rownames(gtex_exp),length(downgenes)),]>0,na.rm=T))
+upp=sapply(rownames(props),function(tis)mean(upperm[tis,]>=props[tis,'upgenes']))
+upp=ifelse(upp<=0.5,upp*2,2*(1-upp))
+downp=sapply(rownames(props),function(tis)mean(downperm[tis,]>=props[tis,'downgenes']))
+downp=ifelse(downp<=0.5,downp*2,2*(1-downp))
+pvals=tibble(tissue=rownames(props),upgenes=upp<=0.05,downgenes=downp<=0.05)
+```
+
+As a result we choose another approach - we asked if the direction of change for the ageing signature we compiled using brain data is similar to the direction of change in these tissues. For each tissue in GTEx, we calculated the proportion in the same direction for up- and down-genes in the ageing signature compiled using arrays separetely, assigning a p-value based on random permutations (Fig. \ref{array_sig_inGTEx}). As expected, GTEx brain data showed the highest degree of agreement. `r sum(props[,'downgenes']<0.5)`/`r nrow(props)` datasets showed more disagreement than agreement (i.e. proportion of change in the same direction was lower than 50%), while only two of them were statistically significant: Liver and Atrial Appendage. Similarly, `r sum(props[,'upgenes']<0.5)`/`r nrow(props)` datasets showed more disagreement, but non of them were significant. Whereas the numbers of significant agreement were `r sum(pvals$downgenes)` and `r sum(pvals$upgenes)` for down- and up-genes, respectively.
+
+```{r array_signature,fig.height=9, fig.cap='Proportion of the genes in GTEx dataset that show age-related change in the same direction as the array signature\\label{array_sig_inGTEx}'}
+props%>%
+  mutate(tissue=rownames(props))%>%
+  gather('type','proportion',-3)%>%
+  full_join(gather(pvals,'type','signif',-1))%>%
+  mutate(tissue=factor(tissue,levels=tissue[ord]))%>%
+  ggplot(aes(x=type,y=tissue))+
+  geom_tile(aes(fill=proportion))+
+  scale_fill_gradient2(high="red",mid='white',low='blue',midpoint = 0.5)+
+  geom_text(aes(label=paste(round((proportion*100),1),'%',sep=''),size=signif))+
+  scale_size_discrete(range=c(1,4))+
+  theme_pubclean()+
+  xlab('')+ylab('')+
+  guides(size=guide_legend('Significant (p<=0.05)'),
+         fill=guide_colorbar('Proportion'))+
+  theme(legend.direction = 'vertical',
+        legend.position = 'right',axis.ticks = element_blank())
+```
+
+## Ageing signature calculated using GTEx brain data
+
+```{r}
+upgenes=intersect(gtex_up,rownames(gtex_exp))
+downgenes=intersect(gtex_down,rownames(gtex_exp))
+gtex_subset=gtex_exp[unique(c(upgenes,downgenes)),!grepl('brain',colnames(gtex_exp),ignore.case = T)]
+```
+
+```{r}
+upprop=colMeans(gtex_subset[upgenes,]>0,na.rm=T)
+downprop=colMeans(gtex_subset[downgenes,]<0,na.rm=T)
+props=data.frame(upgenes=upprop,downgenes=downprop)
+```
+
+```{r}
+ord=hclust(dist(props))$order
+```
+
+```{r}
+upperm=sapply(1:10000,function(i)colMeans(gtex_exp[sample(rownames(gtex_exp),length(upgenes)),]>0,na.rm=T))
+downperm=sapply(1:10000,function(i)colMeans(gtex_exp[sample(rownames(gtex_exp),length(downgenes)),]>0,na.rm=T))
+upp=sapply(rownames(props),function(tis)mean(upperm[tis,]>=props[tis,'upgenes']))
+upp=ifelse(upp<=0.5,upp*2,2*(1-upp))
+downp=sapply(rownames(props),function(tis)mean(downperm[tis,]>=props[tis,'downgenes']))
+downp=ifelse(downp<=0.5,downp*2,2*(1-downp))
+pvals=tibble(tissue=rownames(props),upgenes=upp<=0.05,downgenes=downp<=0.05)
+```
+
+Similar to the analysis for the microarray signature, for each tissue in GTEx, we calculated the proportion in the same direction for up- and down-genes in the ageing signature compiled using gtex brain data, separetely, assigning a p-value based on random permutations (Fig. \ref{gtex_sig_inGTEx}). We excluded brain datasets as they are the datasets used to generate signature. `r sum(props[,'downgenes']<0.5)`/`r nrow(props)` datasets showed more disagreement than agreement (i.e. proportion of change in the same direction was lower than 50%), while five of them were statistically significant:Atrial Appendage, Male breast mammary tissue, not sun exposed skin, sigmoid colon. More strikingly, `r sum(props[,'upgenes']<0.5)`/`r nrow(props)` datasets showed more disagreement, but only Liver was significant. Whereas the numbers of significant agreement were `r sum(pvals$downgenes)` and `r sum(pvals$upgenes)` for down- and up-genes, respectively.
+
+```{r gtex_signature,fig.height=7, fig.cap='Proportion of the genes in GTEx dataset that show age-related change in the same direction as the GTEx Brain signature\\label{gtex_sig_inGTEx}'}
+props%>%
+  mutate(tissue=rownames(props))%>%
+  gather('type','proportion',-3)%>%
+  full_join(gather(pvals,'type','signif',-1))%>%
+  mutate(tissue=factor(tissue,levels=tissue[ord]))%>%
+  ggplot(aes(x=type,y=tissue))+
+  geom_tile(aes(fill=proportion))+
+  scale_fill_gradient2(high="red",mid='white',low='blue',midpoint = 0.5)+
+  geom_text(aes(label=paste(round((proportion*100),1),'%',sep=''),size=signif))+
+  scale_size_discrete(range=c(1,4))+
+  theme_pubclean()+
+  xlab('')+ylab('')+
+  guides(size=guide_legend('Significant (p<=0.05)'),
+         fill=guide_colorbar('Proportion'))+
+  theme(legend.direction = 'vertical',
+        legend.position = 'right',axis.ticks = element_blank())
+```
+
+# Conclusion
+
+We show that the ageing signatures compiled using brain tissue are good proxy to represent age-related changes in other tissues, suggested by the significant similarity in other tissues (Fig. \ref{array_sig_inGTEx}, \ref{gtex_sig_inGTEx}). However, it is important to note that some of the changes we capture might be tissue specific - which would explain the low similarity values even if they are significant. Also some tissues may include drastic tissue specific changes, which is a potential explanation for the low correlation values among tissues (Fig. \ref{gtex_cors}). Nevertheless, similarity in other tissues to ageing signature is far from being random and thus it is likely to capture generic age-related changes that is not brain-specific. Indeed, our results include known life-span extending compounds, which are not thought to primarily act on brain tissue.
+
+# Methods
+
+## GTEx data
+Pre-processing steps for the tissues analysed in this script are the same as the procedure used for GTEx brain tissue, and described in the article. 
+
+## Session Info
+```{r}
+sessionInfo()
+```
+
