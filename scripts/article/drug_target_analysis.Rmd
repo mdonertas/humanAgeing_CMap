@@ -1,0 +1,90 @@
+---
+title: "Drug Target Analysis"
+author: "Melike Donertas"
+date: "03/04/2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,cache=T, message=F, warning=F, tidy=TRUE, tidy.opts=list(width.cutoff=55))
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r,message=F,warning=F}
+library(tidyverse)
+library(ggpubr)
+library(pheatmap)
+library(igraph)
+```
+
+# How similar are the 24 compounds we identify with respect to their targets?
+
+```{r}
+load('./data/article.RData')
+mapping=unique(tibble(CMap_Name=idconvert$CMap,cid=rownames(idconvert)))
+mapforsignif=mapping%>%
+  filter(CMap_Name%in%signifdruglist)%>%
+  filter((!is.na(CMap_Name))&(!is.na(cid)))%>%
+  unique()
+rm(list=setdiff(ls(),'mapforsignif'))
+mapforsignif
+```
+
+
+```{r}
+stitch=read_csv('./data/raw/STITCH/stitch.csv')%>%
+  mutate(cid=as.character(cid))
+stitch
+```
+
+```{r}
+drug_target_list=left_join(mapforsignif,stitch)%>%
+  dplyr::select(CMap_Name,gene.name,action)%>%
+  na.omit()%>%
+  unique()
+drug_target_list
+```
+
+```{r,width=3}
+targetNums=drug_target_list%>%
+  group_by(CMap_Name,action)%>%
+  summarise(`Number of Targets`=length(unique(gene.name)))
+targetNums%>%
+  ggplot(aes(x=action,y=CMap_Name))+
+  geom_tile(aes(fill=`Number of Targets`))+
+  scale_fill_gradient(low='gray90',high = 'gray50')+
+  geom_text(aes(label=`Number of Targets`))+
+  theme_pubr()+
+  xlab('')+ylab('')
+```
+
+```{r}
+druglist=unique(drug_target_list$CMap_Name)
+dr1=druglist[1]
+dr2=druglist[1]
+drugsim=sapply(druglist,function(dr1){
+  sapply(druglist,function(dr2){
+    dr1y=unique((drug_target_list%>%filter(CMap_Name==dr1 & action=='inhibition'))$gene.name)
+    dr2y=unique((drug_target_list%>%filter(CMap_Name==dr2& action=='inhibition'))$gene.name)
+    inty=length(intersect(dr1y,dr2y))
+    uny=length(union(dr1y,dr2y))
+    dr1x=unique((drug_target_list%>%filter(CMap_Name==dr1 & action=='activation'))$gene.name)
+    dr2x=unique((drug_target_list%>%filter(CMap_Name==dr2& action=='activation'))$gene.name)
+    intx=length(intersect(dr1x,dr2x))
+    unx=length(union(dr1x,dr2x))
+    (inty/uny)+(intx/unx)
+  })
+})
+colnames(drugsim)=druglist
+rownames(drugsim)=druglist
+diag(drugsim)=0
+pheatmap(drugsim)
+```
+
+```{r}
+drug_target_list
+```
+
